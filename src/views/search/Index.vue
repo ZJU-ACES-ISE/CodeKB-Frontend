@@ -30,7 +30,7 @@
     <!-- ═══ 图表行 ═══ -->
     <el-row :gutter="16" class="chart-row" v-if="stats">
       <!-- 来源平台分布 -->
-      <el-col :span="6">
+      <el-col :span="6" class="chart-col">
         <el-card class="chart-card" header="来源平台">
           <div class="chart-center">
             <DonutChart
@@ -45,14 +45,14 @@
       </el-col>
 
       <!-- 语言分布 -->
-      <el-col :span="9">
+      <el-col :span="9" class="chart-col">
         <el-card class="chart-card" header="语言分布">
           <HBarChart :data="langBars" :max-items="8" />
         </el-card>
       </el-col>
 
       <!-- 仓库状态 -->
-      <el-col :span="9">
+      <el-col :span="9" class="chart-col">
         <el-card class="chart-card" header="仓库解析进度">
           <div class="progress-grid">
             <div v-for="s in statusBlocks" :key="s.label" class="progress-block">
@@ -79,37 +79,70 @@
 
     <!-- ═══ Star 排行 + 最近导入 ═══ -->
     <el-row :gutter="16" class="bottom-row" v-if="stats">
-      <el-col :span="12">
-        <el-card header="⭐ 最受关注仓库">
-          <div class="star-list">
-            <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
-              <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
-                {{ i + 1 }}
-              </span>
-              <div class="star-body">
-                <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
-                <div class="star-meta">
-                  <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
-                  <span class="provider-icon">{{ providerIcon(r.githubUrl) }}</span>
+      <el-col :xs="24" :md="12" :xl="8">
+        <el-card header="⭐ 最受关注仓库" class="summary-card">
+          <el-scrollbar v-if="stats.topStarRepos.length" class="summary-scroll">
+            <div class="star-list">
+              <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
+                <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
+                  {{ i + 1 }}
+                </span>
+                <div class="star-body">
+                  <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
+                  <div class="star-meta">
+                    <span class="provider-pill">{{ providerIcon(r.githubUrl) }}</span>
+                    <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
+                  </div>
                 </div>
+                <span class="star-count">⭐ {{ fmtNum(r.starCount) }}</span>
               </div>
-              <span class="star-count">⭐ {{ fmtNum(r.starCount) }}</span>
             </div>
-          </div>
-          <el-empty v-if="!stats.topStarRepos.length" description="暂无数据" :image-size="50" />
+          </el-scrollbar>
+          <el-empty v-else description="暂无数据" class="summary-empty" :image-size="50" />
         </el-card>
       </el-col>
 
-      <el-col :span="12">
-        <el-card header="涉及领域">
-          <div v-if="fwBlocks.length" class="fw-grid">
-            <div v-for="fw in fwBlocks" :key="fw.name" class="fw-block"
-              :style="{ background: fw.bg, borderColor: fw.color }">
-              <div class="fw-name">{{ fw.name }}</div>
-              <div class="fw-cnt">{{ fw.count }} 个仓库</div>
+      <el-col :xs="24" :md="12" :xl="8">
+        <el-card header="仓库列表" class="summary-card" v-loading="repoCatalogLoading">
+          <el-scrollbar v-if="repoCatalog.length" class="summary-scroll">
+            <div class="repo-list">
+              <div v-for="repo in repoCatalog" :key="repo.id" class="repo-list-row">
+                <div class="repo-list-main">
+                  <span class="provider-badge repo-list-provider">{{ providerIcon(repo.githubUrl) }}</span>
+                  <div class="repo-list-body">
+                    <el-link @click="$router.push(`/repos/${repo.id}`)" class="repo-list-name" style="cursor:pointer">{{ repo.name }}</el-link>
+                    <div class="repo-list-meta">
+                      <span class="repo-list-kb">{{ kbName(repo.kbId) }}</span>
+                      <el-tag v-if="repo.language" size="small" effect="plain">{{ repo.language }}</el-tag>
+                      <span v-if="repo.starCount" class="repo-list-stars">⭐ {{ fmtNum(repo.starCount) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <el-tag size="small" effect="plain" :type="repoStatusType(repo.status)">
+                  {{ repoStatusLabel(repo.status) }}
+                </el-tag>
+              </div>
             </div>
-          </div>
-          <el-empty v-else description="导入仓库后自动提取领域信息" :image-size="50" />
+          </el-scrollbar>
+          <el-empty v-else-if="!repoCatalogLoading" class="summary-empty" description="暂无仓库" :image-size="50" />
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :md="24" :xl="8">
+        <el-card header="涉及领域" class="summary-card">
+          <el-scrollbar v-if="fwBlocks.length" class="summary-scroll">
+            <div class="fw-grid">
+              <div v-for="fw in fwBlocks" :key="fw.name" class="fw-block"
+                :style="{ background: fw.bg, borderColor: fw.color }">
+                <div class="fw-head">
+                  <span class="fw-swatch" :style="{ background: fw.color }" />
+                  <div class="fw-name">{{ fw.name }}</div>
+                </div>
+                <div class="fw-cnt">{{ fw.count }} 个仓库</div>
+              </div>
+            </div>
+          </el-scrollbar>
+          <el-empty v-else description="导入仓库后自动提取领域信息" class="summary-empty" :image-size="50" />
         </el-card>
       </el-col>
     </el-row>
@@ -361,15 +394,55 @@ import { knowledgeApi } from '@/api/knowledge'
 import { repoApi } from '@/api/repo'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import HBarChart from '@/components/charts/HBarChart.vue'
-import type { KnowledgeBase } from '@/types/api'
+import type { KbRepo, KnowledgeBase } from '@/types/api'
 
 // ── 知识库列表 ────────────────────────────────────────────────────────────
 const kbList = ref<KnowledgeBase[]>([])
+const repoCatalog = ref<KbRepo[]>([])
+const repoCatalogLoading = ref(false)
+
 async function loadKbs() {
-  try { kbList.value = await knowledgeApi.list() } catch {}
+  try {
+    kbList.value = await knowledgeApi.list()
+  } catch {
+    kbList.value = []
+  }
 }
 
-onMounted(() => { loadKbs(); loadStats() })
+async function loadRepoCatalog() {
+  if (!kbList.value.length) {
+    repoCatalog.value = []
+    return
+  }
+  repoCatalogLoading.value = true
+  try {
+    const reposByKb = await Promise.all(
+      kbList.value.map(async (kb) => {
+        try {
+          return await knowledgeApi.repos(kb.id)
+        } catch {
+          return [] as KbRepo[]
+        }
+      }),
+    )
+    repoCatalog.value = reposByKb
+      .flat()
+      .sort((a, b) => {
+        const starDiff = (b.starCount ?? 0) - (a.starCount ?? 0)
+        if (starDiff !== 0) return starDiff
+        return a.name.localeCompare(b.name)
+      })
+  } finally {
+    repoCatalogLoading.value = false
+  }
+}
+
+async function initializePage() {
+  await loadKbs()
+  await Promise.all([loadStats(), loadRepoCatalog()])
+}
+
+onMounted(() => { initializePage() })
 
 // ── 三套平台导入表单（GitHub / Gitee / GitLab 共用同一套逻辑，各自独立 state）
 function makeForm() {
@@ -475,6 +548,12 @@ const STATUS_META = [
   { key: 'GRAPH_READY', label: '图就绪', color: '#0c7c59' },
   { key: 'FAILED', label: '失败', color: '#ef4444' },
 ]
+const STATUS_TYPE_MAP: Record<string, '' | 'success' | 'info' | 'warning' | 'danger'> = {
+  IMPORTED: 'info',
+  SUMMARIZED: 'warning',
+  GRAPH_READY: 'success',
+  FAILED: 'danger',
+}
 const statusBlocks = computed(() => {
   if (!stats.value) return []
   const dist = stats.value.statusDistribution as Record<string, number>
@@ -568,7 +647,11 @@ async function importLocal() {
   } finally { localLoading.value = false }
 }
 
-function onImported() { importOpen.value = false; loadStats() }
+function onImported() {
+  importOpen.value = false
+  loadStats()
+  loadRepoCatalog()
+}
 
 // ── search ────────────────────────────────────────────────────────────────
 const query = ref('')
@@ -603,6 +686,18 @@ function topicsOf(item: any): string[] {
   if (!raw) return []
   if (Array.isArray(raw)) return raw.slice(0, 5)
   try { return (JSON.parse(raw) as string[]).slice(0, 5) } catch { return [] }
+}
+
+function kbName(kbId: number) {
+  return kbList.value.find(kb => kb.id === kbId)?.name || `知识库 #${kbId}`
+}
+
+function repoStatusLabel(status: string) {
+  return STATUS_META.find(item => item.key === status)?.label || status
+}
+
+function repoStatusType(status: string) {
+  return STATUS_TYPE_MAP[status] ?? 'info'
 }
 
 function fmtNum(n: number) {
@@ -644,11 +739,33 @@ function fmtNum(n: number) {
 
 /* Charts */
 .chart-row { margin-bottom: 16px; }
-.chart-card { min-height: 200px; }
-.chart-center { display: flex; justify-content: center; padding: 8px 0; }
+.chart-col { display: flex; }
+.chart-card {
+  width: 100%;
+  height: 100%;
+  min-height: 290px;
+}
+.chart-card :deep(.el-card__body) {
+  min-height: 232px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.chart-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+}
 
 /* progress blocks */
-.progress-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.progress-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+}
 .progress-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .pb-ring { position: relative; display: flex; align-items: center; justify-content: center; }
 .pb-pct {
@@ -659,30 +776,151 @@ function fmtNum(n: number) {
 
 /* bottom row */
 .bottom-row { margin-bottom: 20px; }
-.star-list { display: flex; flex-direction: column; gap: 10px; }
-.star-row { display: flex; align-items: center; gap: 10px; }
+.bottom-row > .el-col { display: flex; }
+.summary-card { width: 100%; height: 100%; }
+.summary-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+}
+.summary-scroll { height: 300px; padding-right: 4px; }
+.summary-empty { height: 300px; display: flex; align-items: center; justify-content: center; }
+.star-list { display: flex; flex-direction: column; gap: 0; }
+.star-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+.star-row:last-child { border-bottom: 0; }
 .star-idx {
-  width: 24px; height: 24px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; background: #f0f0f0; color: #69758a; flex-shrink: 0;
+  margin-top: 2px;
 }
 .star-idx.gold { background: #fef9c3; color: #92400e; }
 .star-idx.silver { background: #f1f5f9; color: #475569; }
 .star-idx.bronze { background: #fef3c7; color: #b45309; }
-.star-body { flex: 1; display: flex; align-items: center; gap: 6px; }
-.star-name { font-size: 14px; font-weight: 500; }
-.star-count { font-size: 13px; color: #69758a; }
+.star-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.star-name {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.star-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.star-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-top: 4px;
+}
+.provider-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
 .provider-icon { font-size: 14px; }
 .provider-badge { font-size: 18px; flex-shrink: 0; }
 
-/* frameworks */
-.fw-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-.fw-block {
-  padding: 10px 16px; border-radius: 8px; border: 1px solid;
-  min-width: 100px; text-align: center;
+.repo-list { display: flex; flex-direction: column; gap: 10px; }
+.repo-list-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf2f7;
 }
-.fw-name { font-size: 13px; font-weight: 600; }
-.fw-cnt { font-size: 11px; color: #69758a; margin-top: 2px; }
+.repo-list-row:last-child { border-bottom: 0; }
+.repo-list-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1; }
+.repo-list-provider { margin-top: 2px; }
+.repo-list-body { min-width: 0; flex: 1; }
+.repo-list-name {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.repo-list-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  color: #69758a;
+  font-size: 12px;
+}
+.repo-list-kb { color: #4a5568; }
+.repo-list-stars { white-space: nowrap; }
+
+/* frameworks */
+.fw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.fw-block {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid;
+  min-width: 0;
+  text-align: left;
+}
+.fw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fw-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.fw-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.fw-cnt {
+  font-size: 12px;
+  color: #69758a;
+  margin-top: 8px;
+  padding-left: 18px;
+}
+
+@media (max-width: 1199px) {
+  .summary-scroll,
+  .summary-empty { height: 280px; }
+  .fw-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 991px) {
+  .chart-col,
+  .bottom-row > .el-col { display: block; }
+  .chart-card { min-height: 0; }
+  .chart-card :deep(.el-card__body) { min-height: 0; }
+  .fw-grid { grid-template-columns: 1fr; }
+}
 
 /* import dialog */
 .import-tabs :deep(.el-tabs__header) { margin-bottom: 12px; }
