@@ -81,7 +81,7 @@
     <main class="main-area">
       <div class="toolbar">
         <el-button @click="handleFit">Fit</el-button>
-        <el-button @click="selectedNode = null">Clear Detail</el-button>
+        <el-button @click="clearDetail">Clear Detail</el-button>
         <span class="render-info">{{ renderInfo }}</span>
       </div>
 
@@ -90,12 +90,13 @@
           :graph="graph"
           :visible-types="visibleTypes"
           :max-nodes="maxNodes"
-          @select="selectedNode = $event"
+          @select="onSelectNode"
+          @select-edge="onSelectEdge"
           @stats="onStats"
         />
 
         <!-- Details panel -->
-        <div class="details-panel" :class="{ visible: !!selectedNode }">
+        <div class="details-panel" :class="{ visible: !!selectedNode || !!selectedEdge }">
           <template v-if="selectedNode">
             <div class="detail-title">{{ selectedNode.label || selectedNode.id }}</div>
             <div class="kv">
@@ -106,6 +107,21 @@
               <span class="k">Lines</span><span>{{ selectedNode.start_line }} – {{ selectedNode.end_line }}</span>
             </div>
             <pre class="code-block">{{ selectedNode.code || '' }}</pre>
+          </template>
+          <template v-else-if="selectedEdge">
+            <div class="detail-title">{{ edgeTitle }}</div>
+            <div class="kv">
+              <span class="k">Source</span><span>{{ edgeSourceLabel }}</span>
+              <span class="k">Target</span><span>{{ edgeTargetLabel }}</span>
+              <span class="k">Relation</span><span>{{ selectedEdge.relation || selectedEdge.edge_type || '-' }}</span>
+              <span class="k">Edge Type</span><span>{{ selectedEdge.edge_type || '-' }}</span>
+              <span class="k">Confidence</span><span>{{ selectedEdge.confidence || '-' }}</span>
+              <span class="k">Score</span><span>{{ formatEdgeNumber(selectedEdge.confidence_score) }}</span>
+              <span class="k">Source File</span><span>{{ selectedEdge.source_file || '-' }}</span>
+              <span class="k">Source Loc</span><span>{{ selectedEdge.source_location || '-' }}</span>
+              <span class="k">Weight</span><span>{{ formatEdgeNumber(selectedEdge.weight) }}</span>
+              <span class="k">Context</span><span>{{ selectedEdge.context || '-' }}</span>
+            </div>
           </template>
         </div>
       </div>
@@ -120,7 +136,7 @@ import { ElMessage } from 'element-plus'
 import { knowledgeApi } from '@/api/knowledge'
 import GraphCanvas from '@/components/GraphCanvas.vue'
 import { useGraphJob } from '@/composables/useGraphJob'
-import type { GraphNode, GraphPayload } from '@/types/graph'
+import type { GraphEdge, GraphNode, GraphPayload } from '@/types/graph'
 import type { KnowledgeBase, KbRepo } from '@/types/api'
 import client from '@/api/client'
 
@@ -136,11 +152,33 @@ const depth = ref(1)
 const maxNodes = ref(700)
 const visibleTypes = ref<Set<string>>(new Set(['folder_structure', 'cross_file_deps', 'call_graph', 'class_inheritance']))
 const selectedNode = ref<GraphNode | null>(null)
+const selectedEdge = ref<GraphEdge | null>(null)
 const renderInfo = ref('')
 
 const typeCountEntries = computed(() =>
   graph.value ? Object.entries(graph.value.metadata.graph_type_counts) : []
 )
+
+const nodeIndex = computed(() => {
+  const map = new Map<string, GraphNode>()
+  graph.value?.nodes.forEach((node) => map.set(node.id, node))
+  return map
+})
+
+const edgeSourceLabel = computed(() => {
+  if (!selectedEdge.value) return '-'
+  return nodeIndex.value.get(selectedEdge.value.source)?.label || selectedEdge.value.source
+})
+
+const edgeTargetLabel = computed(() => {
+  if (!selectedEdge.value) return '-'
+  return nodeIndex.value.get(selectedEdge.value.target)?.label || selectedEdge.value.target
+})
+
+const edgeTitle = computed(() => {
+  if (!selectedEdge.value) return ''
+  return `${edgeSourceLabel.value} -> ${edgeTargetLabel.value}`
+})
 
 onMounted(async () => {
   try {
@@ -167,6 +205,8 @@ async function onKbChange(kbId: number) {
   selectedRepoId.value = null
   repoList.value = []
   graph.value = null
+  selectedEdge.value = null
+  selectedNode.value = null
   try { repoList.value = await knowledgeApi.repos(kbId) }
   catch (e: any) { ElMessage.error(e?.message || '加载仓库失败') }
 }
@@ -175,6 +215,7 @@ async function onKbChange(kbId: number) {
 async function onRepoChange(repoId: number | null) {
   if (!repoId) return
   selectedNode.value = null
+  selectedEdge.value = null
   graph.value = null
   task.value = null
   try {
@@ -237,6 +278,21 @@ function handleFit() {
   maxNodes.value = maxNodes.value
 }
 
+function clearDetail() {
+  selectedNode.value = null
+  selectedEdge.value = null
+}
+
+function onSelectNode(node: GraphNode) {
+  selectedEdge.value = null
+  selectedNode.value = node
+}
+
+function onSelectEdge(edge: GraphEdge) {
+  selectedNode.value = null
+  selectedEdge.value = edge
+}
+
 function toggleType(type: string) {
   const s = new Set(visibleTypes.value)
   s.has(type) ? s.delete(type) : s.add(type)
@@ -245,6 +301,11 @@ function toggleType(type: string) {
 
 function onStats(stats: { nodes: number; edges: number }) {
   renderInfo.value = `Rendered ${stats.nodes} nodes and ${stats.edges} edges`
+}
+
+function formatEdgeNumber(value: number | null | undefined) {
+  if (value == null) return '-'
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 </script>
 

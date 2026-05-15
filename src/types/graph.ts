@@ -53,7 +53,14 @@ export interface GraphNode {
 export interface GraphEdge {
   source: string;
   target: string;
+  relation?: string | null;
   edge_type: string;
+  confidence?: string | null;
+  confidence_score?: number | null;
+  source_file?: string | null;
+  source_location?: string | null;
+  weight?: number | null;
+  context?: string | null;
 }
 
 export interface GraphMetadata {

@@ -12,6 +12,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   select: [node: GraphNode];
+  'select-edge': [edge: GraphEdge];
   stats: [stats: { nodes: number; edges: number }];
 }>();
 
@@ -53,6 +54,7 @@ interface PositionedEdge {
   width: number;
   sourceId: string;
   targetId: string;
+  raw: GraphEdge;
 }
 
 const positionedNodes = ref<PositionedNode[]>([]);
@@ -134,6 +136,7 @@ function filterAndLayout() {
         width: crossSubgraph ? 1.6 : 0.8,
         sourceId: e.source,
         targetId: e.target,
+        raw: e,
       } satisfies PositionedEdge;
     })
     .filter((e): e is PositionedEdge => e !== null);
@@ -149,6 +152,10 @@ watch(
 
 function onSelect(node: PositionedNode) {
   emit('select', node);
+}
+
+function onSelectEdge(edge: PositionedEdge) {
+  emit('select-edge', edge.raw);
 }
 
 function labelText(node: PositionedNode): string {
@@ -167,16 +174,30 @@ function labelText(node: PositionedNode): string {
       preserveAspectRatio="xMidYMid meet"
     >
       <g class="edges">
-        <line
+        <g
           v-for="(edge, idx) in positionedEdges"
           :key="`e-${idx}-${edge.sourceId}-${edge.targetId}`"
-          class="edge"
-          :x1="edge.x1"
-          :y1="edge.y1"
-          :x2="edge.x2"
-          :y2="edge.y2"
-          :stroke-width="edge.width"
-        />
+          class="edge-group"
+          @mouseenter="onSelectEdge(edge)"
+          @click="onSelectEdge(edge)"
+        >
+          <line
+            class="edge"
+            :x1="edge.x1"
+            :y1="edge.y1"
+            :x2="edge.x2"
+            :y2="edge.y2"
+            :stroke-width="edge.width"
+          />
+          <line
+            class="edge-hit"
+            :x1="edge.x1"
+            :y1="edge.y1"
+            :x2="edge.x2"
+            :y2="edge.y2"
+            :stroke-width="Math.max(8, edge.width + 6)"
+          />
+        </g>
       </g>
       <g class="nodes">
         <g
@@ -228,6 +249,21 @@ function labelText(node: PositionedNode): string {
 .edge {
   stroke: #a6b0c3;
   stroke-opacity: 0.45;
+  transition: stroke 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
+}
+
+.edge-hit {
+  stroke: transparent;
+  pointer-events: stroke;
+}
+
+.edge-group {
+  cursor: pointer;
+}
+
+.edge-group:hover .edge {
+  stroke: #2563eb;
+  stroke-opacity: 0.9;
 }
 
 .node {
