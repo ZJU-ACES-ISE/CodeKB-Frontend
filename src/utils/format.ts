@@ -15,13 +15,13 @@ export function formatNumber(value?: number | null): string {
 
 const STATUS_LABELS: Record<string, string> = {
   IMPORTED: '已导入',
-  SUMMARIZED: '已摘要',
-  GRAPH_READY: '关联图就绪',
+  SUMMARIZED: '已解析',
   FAILED: '失败',
   PENDING: '排队中',
   SUBMITTED: '已提交',
   BUILDING: '构建中',
   READY: '就绪',
+  NONE: '未创建',
 };
 
 export function formatStatus(value?: string | null): string {
@@ -32,15 +32,31 @@ export function formatStatus(value?: string | null): string {
 const STATUS_COLOR: Record<string, string> = {
   IMPORTED: 'info',
   SUMMARIZED: 'warning',
-  GRAPH_READY: 'success',
   FAILED: 'danger',
   PENDING: 'info',
   SUBMITTED: 'info',
   BUILDING: 'warning',
   READY: 'success',
+  NONE: 'info',
 };
 
 export function statusTagType(value?: string | null): 'success' | 'warning' | 'info' | 'danger' | 'primary' {
   if (!value) return 'info';
   return (STATUS_COLOR[value] as 'success' | 'warning' | 'info' | 'danger' | 'primary') ?? 'info';
+}
+
+export function repoStatusLabel(value?: string | null): string {
+  return formatStatus(value);
+}
+
+export function repoStatusTagType(value?: string | null): 'success' | 'warning' | 'info' | 'danger' | 'primary' {
+  return statusTagType(value);
+}
+
+export function graphTaskStatusLabel(value?: string | null): string {
+  return formatStatus(value);
+}
+
+export function graphTaskStatusTagType(value?: string | null): 'success' | 'warning' | 'info' | 'danger' | 'primary' {
+  return statusTagType(value);
 }

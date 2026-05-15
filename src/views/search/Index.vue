@@ -53,7 +53,7 @@
 
       <!-- 仓库状态 -->
       <el-col :span="9" class="chart-col">
-        <el-card class="chart-card" header="仓库解析进度">
+        <el-card class="chart-card" header="仓库状态（导入 / 摘要）">
           <div class="progress-grid">
             <div v-for="s in statusBlocks" :key="s.label" class="progress-block">
               <div class="pb-value" :style="{ color: s.color }">{{ s.count }}</div>
@@ -118,9 +118,18 @@
                     </div>
                   </div>
                 </div>
-                <el-tag size="small" effect="plain" :type="repoStatusType(repo.status)">
-                  {{ repoStatusLabel(repo.status) }}
-                </el-tag>
+                <div class="repo-list-statuses">
+                  <el-tag size="small" effect="plain" :type="repoStatusTagType(repo.status)">
+                    仓库 {{ repoStatusLabel(repo.status) }}
+                  </el-tag>
+                  <el-tag
+                    size="small"
+                    effect="plain"
+                    :type="graphTaskStatusTagType(repo.latestGraphTask?.status || 'NONE')"
+                  >
+                    图任务 {{ graphTaskStatusLabel(repo.latestGraphTask?.status || 'NONE') }}
+                  </el-tag>
+                </div>
               </div>
             </div>
           </el-scrollbar>
@@ -395,6 +404,7 @@ import { repoApi } from '@/api/repo'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import HBarChart from '@/components/charts/HBarChart.vue'
 import type { KbRepo, KnowledgeBase } from '@/types/api'
+import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 // ── 知识库列表 ────────────────────────────────────────────────────────────
 const kbList = ref<KnowledgeBase[]>([])
@@ -558,18 +568,11 @@ const sourceDonut = computed(() => {
 const STATUS_META = [
   { key: 'IMPORTED', label: '已导入', color: '#69758a' },
   { key: 'SUMMARIZED', label: '已解析', color: '#3b82f6' },
-  { key: 'GRAPH_READY', label: '图就绪', color: '#0c7c59' },
   { key: 'FAILED', label: '失败', color: '#ef4444' },
 ]
-const STATUS_TYPE_MAP: Record<string, '' | 'success' | 'info' | 'warning' | 'danger'> = {
-  IMPORTED: 'info',
-  SUMMARIZED: 'warning',
-  GRAPH_READY: 'success',
-  FAILED: 'danger',
-}
 const statusBlocks = computed(() => {
   if (!stats.value) return []
-  const dist = stats.value.statusDistribution as Record<string, number>
+  const dist = (stats.value.repoStatusDistribution ?? stats.value.statusDistribution) as Record<string, number>
   const total = stats.value.repoCount || 1
   return STATUS_META.map(s => ({
     ...s,
@@ -595,7 +598,7 @@ const fwBlocks = computed(() => {
 const kpis = computed(() => [
   { label: '代码仓库', value: fmtNum(stats.value?.repoCount || 0), color: '#0c7c59', icon: 'IconCollection' },
   { label: '知识库', value: fmtNum(stats.value?.kbCount || 0), color: '#3b82f6', icon: 'IconGrid' },
-  { label: '关联图就绪', value: fmtNum(stats.value?.graphReadyCount || 0), color: '#8b5cf6', icon: 'IconShare' },
+  { label: '图任务就绪', value: fmtNum(stats.value?.graphReadyCount || 0), color: '#8b5cf6', icon: 'IconShare' },
   { label: '图节点总量', value: fmtNum(stats.value?.totalNodes || 0), color: '#f59e0b', icon: 'IconData' },
 ])
 
@@ -706,14 +709,6 @@ function kbName(kbId: number) {
   return kbList.value.find(kb => kb.id === kbId)?.name || `知识库 #${kbId}`
 }
 
-function repoStatusLabel(status: string) {
-  return STATUS_META.find(item => item.key === status)?.label || status
-}
-
-function repoStatusType(status: string) {
-  return STATUS_TYPE_MAP[status] ?? 'info'
-}
-
 function fmtNum(n: number) {
   if (!n && n !== 0) return '-'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
@@ -776,7 +771,7 @@ function fmtNum(n: number) {
 /* progress blocks */
 .progress-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
   align-items: center;
 }
@@ -884,6 +879,13 @@ function fmtNum(n: number) {
 }
 .repo-list-kb { color: #4a5568; }
 .repo-list-stars { white-space: nowrap; }
+.repo-list-statuses {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
 /* frameworks */
 .fw-grid {

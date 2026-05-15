@@ -30,7 +30,7 @@
         <el-col :span="6">
           <div class="kpi-card green">
             <div class="kpi-value">{{ stats.graphReadyCount }}</div>
-            <div class="kpi-label">关联图就绪</div>
+            <div class="kpi-label">图任务就绪</div>
           </div>
         </el-col>
         <el-col :span="6">
@@ -72,19 +72,40 @@
 
         <!-- 仓库状态 -->
         <el-col :span="12">
-          <el-card header="仓库状态分布" class="section-card">
-            <div v-if="statusEntries.length" class="status-list">
-              <div v-for="([status, cnt]) in statusEntries" :key="status" class="status-row">
-                <el-tag :type="statusTagType(status)" size="small">{{ statusLabel(status) }}</el-tag>
-                <div class="status-track">
-                  <div class="status-fill"
-                    :style="{ width: (cnt / stats.repoCount * 100) + '%', background: statusColor(status) }" />
+          <el-card header="仓库与图任务状态" class="section-card">
+            <div class="status-section">
+              <div class="section-mini-title">仓库状态（导入 / 摘要）</div>
+              <div v-if="statusEntries.length" class="status-list">
+                <div v-for="([status, cnt]) in statusEntries" :key="status" class="status-row">
+                  <el-tag :type="repoStatusTagType(status)" size="small">{{ repoStatusLabel(status) }}</el-tag>
+                  <div class="status-track">
+                    <div class="status-fill"
+                      :style="{ width: (cnt / stats.repoCount * 100) + '%', background: statusColor(status) }" />
+                  </div>
+                  <span class="status-cnt">{{ cnt }}</span>
+                  <span class="status-pct">({{ Math.round(cnt / stats.repoCount * 100) }}%)</span>
                 </div>
-                <span class="status-cnt">{{ cnt }}</span>
-                <span class="status-pct">({{ Math.round(cnt / stats.repoCount * 100) }}%)</span>
               </div>
+              <el-empty v-else description="暂无数据" :image-size="40" />
             </div>
-            <el-empty v-else description="暂无数据" :image-size="50" />
+
+            <div class="status-divider" />
+
+            <div class="status-section">
+              <div class="section-mini-title">最新图任务状态</div>
+              <div v-if="graphTaskEntries.length" class="status-list">
+                <div v-for="([status, cnt]) in graphTaskEntries" :key="status" class="status-row">
+                  <el-tag :type="graphTaskStatusTagType(status)" size="small">{{ graphTaskStatusLabel(status) }}</el-tag>
+                  <div class="status-track">
+                    <div class="status-fill"
+                      :style="{ width: (cnt / stats.repoCount * 100) + '%', background: graphTaskColor(status) }" />
+                  </div>
+                  <span class="status-cnt">{{ cnt }}</span>
+                  <span class="status-pct">({{ Math.round(cnt / stats.repoCount * 100) }}%)</span>
+                </div>
+              </div>
+              <el-empty v-else description="暂无图任务" :image-size="40" />
+            </div>
           </el-card>
         </el-col>
       </el-row>
@@ -149,6 +170,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import client from '@/api/client'
+import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 const router = useRouter()
 const loading = ref(false)
@@ -158,8 +180,16 @@ const langEntries = computed(() =>
   stats.value ? Object.entries(stats.value.languageDistribution as Record<string, number>) : []
 )
 const statusEntries = computed(() =>
-  stats.value ? Object.entries(stats.value.statusDistribution as Record<string, number>) : []
+  stats.value ? Object.entries((stats.value.repoStatusDistribution ?? stats.value.statusDistribution) as Record<string, number>) : []
 )
+const graphTaskEntries = computed(() => {
+  if (!stats.value) return [] as [string, number][]
+  const dist = (stats.value.graphTaskDistribution ?? {}) as Record<string, number>
+  const order = ['NONE', 'PENDING', 'SUBMITTED', 'BUILDING', 'READY', 'FAILED']
+  return order
+    .filter((key) => dist[key] !== undefined)
+    .map((key) => [key, dist[key]] as [string, number])
+})
 const topicEntries = computed(() =>
   stats.value
     ? Object.entries((stats.value.topicDistribution ?? {}) as Record<string, number>)
@@ -185,14 +215,18 @@ function fmtNumber(n: number) {
   return String(n)
 }
 
-function statusLabel(s: string) {
-  return { IMPORTED: '已导入', SUMMARIZED: '已解析', GRAPH_READY: '图就绪', FAILED: '失败' }[s] ?? s
-}
-function statusTagType(s: string) {
-  return { IMPORTED: 'info', SUMMARIZED: '', GRAPH_READY: 'success', FAILED: 'danger' }[s] ?? 'info'
-}
 function statusColor(s: string) {
-  return { IMPORTED: '#69758a', SUMMARIZED: '#409eff', GRAPH_READY: '#0c7c59', FAILED: '#f56c6c' }[s] ?? '#ccc'
+  return { IMPORTED: '#69758a', SUMMARIZED: '#409eff', FAILED: '#f56c6c' }[s] ?? '#ccc'
+}
+function graphTaskColor(s: string) {
+  return {
+    NONE: '#c0c4cc',
+    PENDING: '#909399',
+    SUBMITTED: '#e6a23c',
+    BUILDING: '#e6a23c',
+    READY: '#67c23a',
+    FAILED: '#f56c6c',
+  }[s] ?? '#ccc'
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -233,6 +267,18 @@ function langColor(name: string) {
 .kpi-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
 
 .section-card { height: 100%; }
+.section-mini-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #69758a;
+  margin-bottom: 12px;
+}
+.status-section + .status-section { margin-top: 16px; }
+.status-divider {
+  height: 1px;
+  background: #edf2f7;
+  margin: 16px 0;
+}
 
 /* 语言 */
 .lang-bar-wrap { margin-bottom: 14px; }

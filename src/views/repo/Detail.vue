@@ -18,9 +18,20 @@
           </el-link>
         </div>
         <div class="repo-actions">
-          <el-tag :type="statusType(detail.repo.status)" style="margin-right:8px">
-            {{ statusLabel(detail.repo.status) }}
-          </el-tag>
+          <div class="status-groups">
+            <div class="status-group">
+              <span class="status-group-label">仓库状态</span>
+              <el-tag :type="repoStatusTagType(detail.repo.status)">
+                {{ repoStatusLabel(detail.repo.status) }}
+              </el-tag>
+            </div>
+            <div class="status-group">
+              <span class="status-group-label">最新图任务</span>
+              <el-tag :type="graphTaskStatusTagType(detail.latestGraphTask?.status || 'NONE')">
+                {{ graphTaskStatusLabel(detail.latestGraphTask?.status || 'NONE') }}
+              </el-tag>
+            </div>
+          </div>
           <el-button type="primary" @click="goGraph">查看关联图</el-button>
           <el-button type="danger" plain @click="confirmDelete">删除仓库</el-button>
         </div>
@@ -43,8 +54,8 @@
             <template v-if="detail.latestGraphTask">
               <el-descriptions :column="2" border size="small">
                 <el-descriptions-item label="状态">
-                  <el-tag :type="graphStatusType(detail.latestGraphTask.status)" size="small">
-                    {{ detail.latestGraphTask.status }}
+                  <el-tag :type="graphTaskStatusTagType(detail.latestGraphTask.status)" size="small">
+                    {{ graphTaskStatusLabel(detail.latestGraphTask.status) }}
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="节点数">{{ detail.latestGraphTask.nodeCount ?? '-' }}</el-descriptions-item>
@@ -163,11 +174,13 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { repoApi } from '@/api/repo'
+import type { RepoDetailResponse } from '@/types/api'
+import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 const props = defineProps<{ repoId: string }>()
 const router = useRouter()
 const loading = ref(true)
-const detail = ref<any>(null)
+const detail = ref<RepoDetailResponse | null>(null)
 
 onMounted(async () => {
   try { detail.value = await repoApi.get(Number(props.repoId)) }
@@ -199,16 +212,6 @@ async function confirmDelete() {
   }
 }
 
-function statusType(s: string) {
-  return { IMPORTED: 'info', SUMMARIZED: '', GRAPH_READY: 'success', FAILED: 'danger' }[s] ?? 'info'
-}
-function statusLabel(s: string) {
-  return { IMPORTED: '已导入', SUMMARIZED: '已解析', GRAPH_READY: '图就绪', FAILED: '失败' }[s] ?? s
-}
-function graphStatusType(s: string) {
-  return { PENDING: 'info', SUBMITTED: 'warning', BUILDING: 'warning', READY: 'success', FAILED: 'danger' }[s] ?? 'info'
-}
-
 function formatSize(kb?: number | null) {
   if (!kb) return '-'
   if (kb >= 1024) return (kb / 1024).toFixed(1) + ' MB'
@@ -235,7 +238,10 @@ function langColor(name: string) {
 <style scoped>
 .page { padding: 24px; }
 .repo-header { display: flex; justify-content: space-between; align-items: flex-start; }
-.repo-actions { display: flex; align-items: center; }
+.repo-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.status-groups { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.status-group { display: flex; align-items: center; gap: 6px; }
+.status-group-label { font-size: 12px; color: #69758a; }
 .center-spin { display: flex; justify-content: center; padding: 60px; }
 .meta-item { display: flex; flex-direction: column; }
 .meta-label { font-size: 12px; color: #69758a; margin-bottom: 2px; }

@@ -1,3 +1,5 @@
+import type { GraphTask } from './graph';
+
 export interface ApiResponse<T> {
   code: number;
   message: string;
@@ -33,7 +35,7 @@ export interface KnowledgeBaseInput {
   description?: string;
 }
 
-export type RepoStatus = 'IMPORTED' | 'SUMMARIZED' | 'GRAPH_READY' | 'FAILED' | string;
+export type RepoStatus = 'IMPORTED' | 'SUMMARIZED' | 'FAILED' | string;
 
 export interface KbRepo {
   id: number;
@@ -52,6 +54,13 @@ export interface KbRepo {
   createdBy?: number | null;
   createdAt?: string;
   updatedAt?: string;
+  latestGraphTask?: GraphTask | null;
+}
+
+export interface RepoDetailResponse {
+  repo: KbRepo;
+  summary: RepoSummary | null;
+  latestGraphTask: GraphTask | null;
 }
 
 export interface ImportRepoInput {

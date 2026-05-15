@@ -1,11 +1,11 @@
 import client from './client';
-import type { ImportRepoInput, KbRepo } from '@/types/api';
+import type { ImportRepoInput, KbRepo, RepoDetailResponse } from '@/types/api';
 
 const ZIP_UPLOAD_TIMEOUT_MS = 600_000;
 
 export const repoApi = {
   get(id: number) {
-    return client.get<KbRepo, KbRepo>(`/repos/${id}`);
+    return client.get<RepoDetailResponse, RepoDetailResponse>(`/repos/${id}`);
   },
   importRepo(payload: ImportRepoInput) {
     return client.post<KbRepo, KbRepo>('/repos/import', payload);

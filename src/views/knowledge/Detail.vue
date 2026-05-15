@@ -30,9 +30,20 @@
       <el-table-column label="Stars" prop="starCount" width="90" align="center">
         <template #default="{ row }">{{ row.starCount != null ? row.starCount : '-' }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="130">
+      <el-table-column label="仓库状态" width="130">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          <el-tag :type="repoStatusTagType(row.status)" size="small">{{ repoStatusLabel(row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="图任务状态" width="140">
+        <template #default="{ row }">
+          <el-tag
+            size="small"
+            effect="plain"
+            :type="graphTaskStatusTagType(row.latestGraphTask?.status || 'NONE')"
+          >
+            {{ graphTaskStatusLabel(row.latestGraphTask?.status || 'NONE') }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="200" align="center">
@@ -71,6 +82,7 @@ import { knowledgeApi } from '@/api/knowledge'
 import { repoApi } from '@/api/repo'
 import ImportRepoDialog from '@/components/ImportRepoDialog.vue'
 import type { KbRepo, KnowledgeBase } from '@/types/api'
+import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 const props = defineProps<{ kbId: string }>()
 const router = useRouter()
@@ -119,13 +131,6 @@ async function loadRepos() {
   try { repos.value = await knowledgeApi.repos(Number(props.kbId)) }
   catch (e: any) { ElMessage.error(e?.message || '加载仓库失败') }
   finally { loading.value = false }
-}
-
-function statusType(s: string) {
-  return { IMPORTED: 'info', SUMMARIZED: '', GRAPH_READY: 'success', FAILED: 'danger' }[s] ?? 'info'
-}
-function statusLabel(s: string) {
-  return { IMPORTED: '已导入', SUMMARIZED: '已解析', GRAPH_READY: '图就绪', FAILED: '失败' }[s] ?? s
 }
 
 async function confirmDelete(row: KbRepo) {
