@@ -90,7 +90,7 @@
                 <div class="star-body">
                   <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
                   <div class="star-meta">
-                    <span class="provider-pill">{{ providerIcon(r.githubUrl) }}</span>
+                    <span class="provider-pill">{{ providerIcon(r.provider || r.githubUrl) }}</span>
                     <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
                   </div>
                 </div>
@@ -108,7 +108,7 @@
             <div class="repo-list">
               <div v-for="repo in repoCatalog" :key="repo.id" class="repo-list-row">
                 <div class="repo-list-main">
-                  <span class="provider-badge repo-list-provider">{{ providerIcon(repo.githubUrl) }}</span>
+                  <span class="provider-badge repo-list-provider">{{ providerIcon(repo.provider || repo.githubUrl) }}</span>
                   <div class="repo-list-body">
                     <el-link @click="$router.push(`/repos/${repo.id}`)" class="repo-list-name" style="cursor:pointer">{{ repo.name }}</el-link>
                     <div class="repo-list-meta">
@@ -363,7 +363,7 @@
         <div class="result-card" v-for="item in results" :key="item.repoId">
           <div class="rc-header">
             <div class="rc-left">
-              <span class="provider-badge">{{ providerIcon(item.githubUrl) }}</span>
+              <span class="provider-badge">{{ providerIcon(item.provider || item.githubUrl) }}</span>
               <el-link @click="$router.push(`/repos/${item.repoId}`)" class="rc-name" style="cursor:pointer">{{ item.repoName }}</el-link>
               <el-tag v-if="item.language" size="small" effect="plain">{{ item.language }}</el-tag>
               <span v-if="item.starCount" class="rc-stars">⭐ {{ fmtNum(item.starCount) }}</span>
@@ -448,7 +448,11 @@ onMounted(() => { initializePage() })
 function makeForm() {
   return ref({ kbId: null as number | null, url: '', ref: '', depth: 1 })
 }
-async function submitForm(form: ReturnType<typeof makeForm>, submitting: { value: boolean }) {
+async function submitForm(
+  form: ReturnType<typeof makeForm>,
+  submitting: { value: boolean },
+  provider: 'github' | 'gitee' | 'gitlab',
+) {
   if (!form.value.kbId) return ElMessage.warning('请选择知识库')
   if (!form.value.url.trim()) return ElMessage.warning('请输入仓库地址')
   submitting.value = true
@@ -456,6 +460,7 @@ async function submitForm(form: ReturnType<typeof makeForm>, submitting: { value
     await repoApi.importRepo({
       kbId: form.value.kbId,
       githubUrl: form.value.url.trim(),
+      provider,
       ref: form.value.ref || undefined,
       depth: form.value.depth,
     })
@@ -470,15 +475,15 @@ async function submitForm(form: ReturnType<typeof makeForm>, submitting: { value
 
 const gitForm = makeForm()
 const gitSubmitting = ref(false)
-function submitGit() { submitForm(gitForm, gitSubmitting) }
+function submitGit() { submitForm(gitForm, gitSubmitting, 'github') }
 
 const giteeForm = makeForm()
 const giteeSubmitting = ref(false)
-function submitGitee() { submitForm(giteeForm, giteeSubmitting) }
+function submitGitee() { submitForm(giteeForm, giteeSubmitting, 'gitee') }
 
 const gitlabForm = makeForm()
 const gitlabSubmitting = ref(false)
-function submitGitlab() { submitForm(gitlabForm, gitlabSubmitting) }
+function submitGitlab() { submitForm(gitlabForm, gitlabSubmitting, 'gitlab') }
 
 // ── stats ────────────────────────────────────────────────────────────────
 const stats = ref<any>(null)
@@ -503,17 +508,19 @@ function lc(name: string) {
 const SOURCE_COLORS: Record<string, string> = {
   github: '#24292e', gitee: '#c7254e', gitlab: '#e24329', local: '#10b981', zip: '#7c3aed', other: '#69758a',
 }
-function detectProvider(url: string) {
-  if (!url) return 'other'
-  if (url.startsWith('upload://')) return 'zip'
-  if (url.includes('github')) return 'github'
-  if (url.includes('gitee')) return 'gitee'
-  if (url.includes('gitlab')) return 'gitlab'
-  if (url.startsWith('local://') || url.startsWith('/') || url.startsWith('file')) return 'local'
+function detectProvider(target?: string | null) {
+  const value = (target || '').toLowerCase()
+  if (!value) return 'other'
+  if (['github', 'gitee', 'gitlab', 'local', 'zip', 'other'].includes(value)) return value
+  if (value.startsWith('upload://')) return 'zip'
+  if (value.includes('github')) return 'github'
+  if (value.includes('gitee')) return 'gitee'
+  if (value.includes('gitlab')) return 'gitlab'
+  if (value.startsWith('local://') || value.startsWith('/') || value.startsWith('file')) return 'local'
   return 'other'
 }
-function providerIcon(url: string) {
-  return { github: '🐙', gitee: '🏮', gitlab: '🦊', local: '📁', zip: '📦', other: '🔗' }[detectProvider(url)] ?? '🔗'
+function providerIcon(target?: string | null) {
+  return { github: '🐙', gitee: '🏮', gitlab: '🦊', local: '📁', zip: '📦', other: '🔗' }[detectProvider(target)] ?? '🔗'
 }
 
 const langBars = computed(() => {
@@ -525,11 +532,17 @@ const langBars = computed(() => {
 
 const sourceDonut = computed(() => {
   if (!stats.value) return []
-  // 从 topStarRepos + all repos deduce source distribution from language dist keys
-  // We'll approximate from repo names for demo — ideally backend sends git_provider
+  const backendDist = stats.value.providerDistribution as Record<string, number> | undefined
+  if (backendDist && Object.keys(backendDist).length) {
+    return Object.entries(backendDist).map(([k, v]) => ({
+      label: k.charAt(0).toUpperCase() + k.slice(1),
+      value: v as number,
+      color: SOURCE_COLORS[k] || '#aaa',
+    }))
+  }
   const dist: Record<string, number> = {}
   ;(stats.value.topStarRepos || []).forEach((r: any) => {
-    const p = detectProvider(r.githubUrl)
+    const p = detectProvider(r.provider || r.githubUrl)
     dist[p] = (dist[p] || 0) + 1
   })
   if (!Object.keys(dist).length) {
@@ -637,6 +650,7 @@ async function importLocal() {
     await repoApi.importRepo({
       kbId: localForm.value.kbId,
       githubUrl: 'local://' + localForm.value.path,
+      provider: 'local',
       ref: undefined,
       depth: 0,
     })

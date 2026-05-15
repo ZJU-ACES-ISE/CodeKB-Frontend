@@ -41,6 +41,7 @@ export interface KbRepo {
   name: string;
   owner?: string | null;
   repo?: string | null;
+  provider?: string | null;
   githubUrl: string;
   ref?: string | null;
   defaultBranch?: string | null;
@@ -56,6 +57,7 @@ export interface KbRepo {
 export interface ImportRepoInput {
   kbId: number;
   githubUrl: string;
+  provider?: string;
   ref?: string;
   depth?: number;
 }
