@@ -395,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile, UploadInstance } from 'element-plus'
 import client from '@/api/client'
@@ -403,13 +403,22 @@ import { knowledgeApi } from '@/api/knowledge'
 import { repoApi } from '@/api/repo'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import HBarChart from '@/components/charts/HBarChart.vue'
-import type { KbRepo, KnowledgeBase } from '@/types/api'
+import type { ImportRepoResponse, KbRepo, KnowledgeBase } from '@/types/api'
 import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 // ── 知识库列表 ────────────────────────────────────────────────────────────
 const kbList = ref<KnowledgeBase[]>([])
 const repoCatalog = ref<KbRepo[]>([])
 const repoCatalogLoading = ref(false)
+const REPO_POLL_MAX_ATTEMPTS = 60
+const REPO_POLL_INTERVAL_MS = 2000
+const pollingRepoIds = new Set<number>()
+const retriedRepoIds = new Set<number>()
+let isActive = true
+
+onUnmounted(() => {
+  isActive = false
+})
 
 async function loadKbs() {
   try {
@@ -419,12 +428,12 @@ async function loadKbs() {
   }
 }
 
-async function loadRepoCatalog() {
+async function loadRepoCatalog(showLoading = true) {
   if (!kbList.value.length) {
     repoCatalog.value = []
     return
   }
-  repoCatalogLoading.value = true
+  if (showLoading) repoCatalogLoading.value = true
   try {
     const reposByKb = await Promise.all(
       kbList.value.map(async (kb) => {
@@ -443,13 +452,58 @@ async function loadRepoCatalog() {
         return a.name.localeCompare(b.name)
       })
   } finally {
-    repoCatalogLoading.value = false
+    if (showLoading) repoCatalogLoading.value = false
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function refreshRepoStatusSnapshot(showLoading = false) {
+  await Promise.all([loadStats(), loadRepoCatalog(showLoading)])
+}
+
+function pollImportedRepos() {
+  repoCatalog.value
+    .filter((repo) => repo.status === 'IMPORTED')
+    .forEach((repo) => void pollImportedRepo(repo.id))
+}
+
+async function pollImportedRepo(repoId: number) {
+  if (pollingRepoIds.has(repoId)) return
+  pollingRepoIds.add(repoId)
+  try {
+    for (let attempt = 0; attempt < REPO_POLL_MAX_ATTEMPTS && isActive; attempt += 1) {
+      await refreshRepoStatusSnapshot(false)
+      const repo = repoCatalog.value.find((item) => item.id === repoId)
+      if (
+        repo &&
+        repo.status === 'IMPORTED' &&
+        repo.latestGraphTask?.status === 'READY' &&
+        !retriedRepoIds.has(repoId)
+      ) {
+        retriedRepoIds.add(repoId)
+        try {
+          await repoApi.retryAnalysis(repoId)
+        } catch {
+          // keep polling even if retry request fails
+        }
+      }
+      if (repo && repo.status !== 'IMPORTED') {
+        return
+      }
+      await sleep(REPO_POLL_INTERVAL_MS)
+    }
+  } finally {
+    pollingRepoIds.delete(repoId)
   }
 }
 
 async function initializePage() {
   await loadKbs()
   await Promise.all([loadStats(), loadRepoCatalog()])
+  pollImportedRepos()
 }
 
 onMounted(() => { initializePage() })
@@ -467,7 +521,7 @@ async function submitForm(
   if (!form.value.url.trim()) return ElMessage.warning('请输入仓库地址')
   submitting.value = true
   try {
-    await repoApi.importRepo({
+    const result = await repoApi.importRepo({
       kbId: form.value.kbId,
       githubUrl: form.value.url.trim(),
       provider,
@@ -477,7 +531,7 @@ async function submitForm(
     ElMessage.success('导入任务已创建，后台正在处理...')
     form.value.url = ''
     form.value.ref = ''
-    onImported()
+    onImported(result)
   } catch (e: any) {
     ElMessage.error(e?.message || '导入失败')
   } finally { submitting.value = false }
@@ -629,7 +683,7 @@ async function submitZip() {
   if (!zipFile.value) return ElMessage.warning('请选择 ZIP 文件')
   zipSubmitting.value = true
   try {
-    await repoApi.importZip(
+    const result = await repoApi.importZip(
       zipForm.value.kbId,
       zipFile.value,
       zipForm.value.repoName || undefined,
@@ -637,7 +691,7 @@ async function submitZip() {
     ElMessage.success('上传成功，后台正在解析摘要并构图…')
     zipForm.value.repoName = ''
     clearZipUpload()
-    onImported()
+    onImported(result)
   } catch (e: unknown) {
     ElMessage.error(e instanceof Error ? e.message : '上传失败')
   } finally {
@@ -650,7 +704,7 @@ async function importLocal() {
   if (!localForm.value.path) return ElMessage.warning('请输入服务器目录路径')
   localLoading.value = true
   try {
-    await repoApi.importRepo({
+    const result = await repoApi.importRepo({
       kbId: localForm.value.kbId,
       githubUrl: 'local://' + localForm.value.path,
       provider: 'local',
@@ -658,16 +712,20 @@ async function importLocal() {
       depth: 0,
     })
     ElMessage.success('本地目录导入任务已创建')
-    importOpen.value = false
+    await onImported(result)
   } catch (e: any) {
     ElMessage.error(e?.message || '导入失败')
   } finally { localLoading.value = false }
 }
 
-function onImported() {
+async function onImported(result?: ImportRepoResponse) {
   importOpen.value = false
-  loadStats()
-  loadRepoCatalog()
+  await refreshRepoStatusSnapshot(true)
+  if (result?.repoId) {
+    void pollImportedRepo(result.repoId)
+  } else {
+    pollImportedRepos()
+  }
 }
 
 // ── search ────────────────────────────────────────────────────────────────

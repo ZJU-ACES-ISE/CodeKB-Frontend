@@ -169,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
@@ -181,12 +181,54 @@ const props = defineProps<{ repoId: string }>()
 const router = useRouter()
 const loading = ref(true)
 const detail = ref<RepoDetailResponse | null>(null)
+const REPO_POLL_MAX_ATTEMPTS = 60
+const REPO_POLL_INTERVAL_MS = 2000
+let analysisRetryTriggered = false
+let isActive = true
+
+onUnmounted(() => {
+  isActive = false
+})
 
 onMounted(async () => {
-  try { detail.value = await repoApi.get(Number(props.repoId)) }
+  try {
+    await loadDetail()
+    void pollWhileImported()
+  }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 })
+
+async function loadDetail() {
+  detail.value = await repoApi.get(Number(props.repoId))
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function pollWhileImported() {
+  for (let attempt = 0; attempt < REPO_POLL_MAX_ATTEMPTS && isActive; attempt += 1) {
+    await loadDetail()
+    if (
+      detail.value?.repo?.status === 'IMPORTED' &&
+      detail.value?.latestGraphTask?.status === 'READY' &&
+      !detail.value?.summary &&
+      !analysisRetryTriggered
+    ) {
+      analysisRetryTriggered = true
+      try {
+        await repoApi.retryAnalysis(Number(props.repoId))
+      } catch {
+        // continue polling and allow the user to refresh manually if needed
+      }
+    }
+    if (detail.value?.repo?.status !== 'IMPORTED') {
+      return
+    }
+    await sleep(REPO_POLL_INTERVAL_MS)
+  }
+}
 
 function goGraph() {
   router.push(`/graph?repoId=${props.repoId}`)

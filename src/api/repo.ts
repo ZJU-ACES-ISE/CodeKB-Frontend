@@ -1,5 +1,5 @@
 import client from './client';
-import type { ImportRepoInput, KbRepo, RepoDetailResponse } from '@/types/api';
+import type { ImportRepoInput, ImportRepoResponse, RepoDetailResponse } from '@/types/api';
 
 const ZIP_UPLOAD_TIMEOUT_MS = 600_000;
 
@@ -8,9 +8,11 @@ export const repoApi = {
     return client.get<RepoDetailResponse, RepoDetailResponse>(`/repos/${id}`);
   },
   importRepo(payload: ImportRepoInput) {
-    return client.post<KbRepo, KbRepo>('/repos/import', payload);
+    return client.post<ImportRepoResponse, ImportRepoResponse>('/repos/import', payload);
   },
-  /** multipart：字段 file、kbId，可选 repo_name（对齐 Graph 服务） */
+  retryAnalysis(id: number) {
+    return client.post<ImportRepoResponse, ImportRepoResponse>(`/analysis/repos/${id}/retry`);
+  },
   importZip(kbId: number, file: File, repoName?: string) {
     const fd = new FormData();
     fd.append('file', file);

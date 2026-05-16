@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { repoApi } from '@/api/repo';
-import type { KbRepo } from '@/types/api';
+import type { ImportRepoResponse } from '@/types/api';
 
 interface Props {
   visible: boolean;
@@ -13,7 +13,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
-  imported: [repo: KbRepo];
+  imported: [repo: ImportRepoResponse];
 }>();
 
 const formRef = ref<FormInstance>();

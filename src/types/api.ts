@@ -71,6 +71,11 @@ export interface ImportRepoInput {
   depth?: number;
 }
 
+export interface ImportRepoResponse {
+  repoId: number;
+  status: string;
+}
+
 export interface RepoContributor {
   login: string;
   avatar_url: string;

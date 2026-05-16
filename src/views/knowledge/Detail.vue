@@ -55,7 +55,7 @@
       </el-table-column>
     </el-table>
 
-    <ImportRepoDialog v-model:visible="importDialogVisible" :kb-id="Number(kbId)" @imported="loadRepos" />
+    <ImportRepoDialog v-model:visible="importDialogVisible" :kb-id="Number(kbId)" @imported="handleImported" />
 
     <el-dialog v-model="kbEditVisible" title="编辑知识库" width="440px" destroy-on-close>
       <el-form :model="kbEditForm" label-position="top">
@@ -75,13 +75,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { knowledgeApi } from '@/api/knowledge'
 import { repoApi } from '@/api/repo'
 import ImportRepoDialog from '@/components/ImportRepoDialog.vue'
-import type { KbRepo, KnowledgeBase } from '@/types/api'
+import type { ImportRepoResponse, KbRepo, KnowledgeBase } from '@/types/api'
 import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 const props = defineProps<{ kbId: string }>()
@@ -93,6 +93,15 @@ const importDialogVisible = ref(false)
 const kbEditVisible = ref(false)
 const kbEditSaving = ref(false)
 const kbEditForm = reactive({ name: '', description: '' })
+const REPO_POLL_MAX_ATTEMPTS = 60
+const REPO_POLL_INTERVAL_MS = 2000
+const pollingRepoIds = new Set<number>()
+const retriedRepoIds = new Set<number>()
+let isActive = true
+
+onUnmounted(() => {
+  isActive = false
+})
 
 function openKbEdit() {
   if (!kb.value) return
@@ -123,14 +132,60 @@ onMounted(async () => {
   try {
     kb.value = await knowledgeApi.get(Number(props.kbId))
     await loadRepos()
+    pollImportedRepos()
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
 })
 
-async function loadRepos() {
-  loading.value = true
+async function loadRepos(showLoading = true) {
+  if (showLoading) loading.value = true
   try { repos.value = await knowledgeApi.repos(Number(props.kbId)) }
   catch (e: any) { ElMessage.error(e?.message || '加载仓库失败') }
-  finally { loading.value = false }
+  finally { if (showLoading) loading.value = false }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function pollImportedRepos() {
+  repos.value
+    .filter((repo) => repo.status === 'IMPORTED')
+    .forEach((repo) => void pollImportedRepo(repo.id))
+}
+
+async function handleImported(result: ImportRepoResponse) {
+  await loadRepos()
+  void pollImportedRepo(result.repoId)
+}
+
+async function pollImportedRepo(repoId: number) {
+  if (pollingRepoIds.has(repoId)) return
+  pollingRepoIds.add(repoId)
+  try {
+    for (let attempt = 0; attempt < REPO_POLL_MAX_ATTEMPTS && isActive; attempt += 1) {
+      await loadRepos(false)
+      const repo = repos.value.find((item) => item.id === repoId)
+      if (
+        repo &&
+        repo.status === 'IMPORTED' &&
+        repo.latestGraphTask?.status === 'READY' &&
+        !retriedRepoIds.has(repoId)
+      ) {
+        retriedRepoIds.add(repoId)
+        try {
+          await repoApi.retryAnalysis(repoId)
+        } catch {
+          // keep polling even if retry request fails
+        }
+      }
+      if (repo && repo.status !== 'IMPORTED') {
+        return
+      }
+      await sleep(REPO_POLL_INTERVAL_MS)
+    }
+  } finally {
+    pollingRepoIds.delete(repoId)
+  }
 }
 
 async function confirmDelete(row: KbRepo) {
