@@ -77,69 +77,69 @@
       </el-col>
     </el-row>
 
-    <!-- ═══ Star 排行 + 最近导入 ═══ -->
-    <el-row :gutter="16" class="bottom-row" v-if="stats">
-      <el-col :xs="24" :md="12" :xl="8">
-        <el-card header="⭐ 最受关注仓库" class="summary-card">
-          <el-scrollbar v-if="stats.topStarRepos.length" class="summary-scroll">
-            <div class="star-list">
-              <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
-                <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
-                  {{ i + 1 }}
-                </span>
-                <div class="star-body">
+    <!-- ═══ Star 排行 ═══ -->
+    <el-row :gutter="16" class="featured-row" v-if="stats">
+      <el-col :span="24" class="featured-col">
+        <el-card header="⭐ 最受关注仓库" class="summary-card featured-card">
+          <div v-if="stats.topStarRepos.length" class="star-grid">
+            <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
+              <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
+                {{ i + 1 }}
+              </span>
+              <div class="star-body">
+                <div class="star-topline">
                   <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
-                  <div class="star-meta">
-                    <span class="provider-pill">{{ providerIcon(r.provider || r.githubUrl) }}</span>
-                    <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
-                  </div>
+                  <span class="star-count">⭐ {{ fmtNum(r.starCount ?? 0) }}</span>
                 </div>
-                <span class="star-count">⭐ {{ fmtNum(r.starCount) }}</span>
+                <div class="star-meta">
+                  <span class="provider-pill">{{ providerIcon(r.provider || r.githubUrl) }}</span>
+                  <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
+                </div>
               </div>
             </div>
-          </el-scrollbar>
+          </div>
           <el-empty v-else description="暂无数据" class="summary-empty" :image-size="50" />
         </el-card>
       </el-col>
+    </el-row>
 
-      <el-col :xs="24" :md="12" :xl="8">
-        <el-card header="仓库列表" class="summary-card" v-loading="repoCatalogLoading">
-          <el-scrollbar v-if="repoCatalog.length" class="summary-scroll">
-            <div class="repo-list">
-              <div v-for="repo in repoCatalog" :key="repo.id" class="repo-list-row">
-                <div class="repo-list-main">
-                  <span class="provider-badge repo-list-provider">{{ providerIcon(repo.provider || repo.githubUrl) }}</span>
-                  <div class="repo-list-body">
-                    <el-link @click="$router.push(`/repos/${repo.id}`)" class="repo-list-name" style="cursor:pointer">{{ repo.name }}</el-link>
-                    <div class="repo-list-meta">
-                      <span class="repo-list-kb">{{ kbName(repo.kbId) }}</span>
-                      <el-tag v-if="repo.language" size="small" effect="plain">{{ repo.language }}</el-tag>
-                      <span v-if="repo.starCount" class="repo-list-stars">⭐ {{ fmtNum(repo.starCount) }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="repo-list-statuses">
-                  <el-tag size="small" effect="plain" :type="repoStatusTagType(repo.status)">
-                    仓库 {{ repoStatusLabel(repo.status) }}
-                  </el-tag>
-                  <el-tag
-                    size="small"
-                    effect="plain"
-                    :type="graphTaskStatusTagType(repo.latestGraphTask?.status || 'NONE')"
-                  >
-                    图任务 {{ graphTaskStatusLabel(repo.latestGraphTask?.status || 'NONE') }}
-                  </el-tag>
-                </div>
-              </div>
+    <!-- ═══ 检索工作区 ═══ -->
+    <el-row :gutter="16" class="workspace-row" v-if="stats">
+      <el-col :xs="24" :xl="16" class="workspace-col">
+        <el-card class="search-section search-card">
+          <template #header>
+            <div class="search-card-header">
+              <span>🔍 代码检索</span>
+              <span class="search-hint">在已导入的仓库中搜索（demo：基于摘要 + 标签匹配）</span>
             </div>
-          </el-scrollbar>
-          <el-empty v-else-if="!repoCatalogLoading" class="summary-empty" description="暂无仓库" :image-size="50" />
+          </template>
+
+          <div class="search-bar-wrap">
+            <el-input v-model="query" size="large" placeholder="输入关键词，例如：payment、UserService、Spring Boot..."
+              clearable @keyup.enter="doSearch">
+              <template #prefix><el-icon><IconSearch /></el-icon></template>
+              <template #append>
+                <el-button type="primary" :loading="searching" @click="doSearch">搜索</el-button>
+              </template>
+            </el-input>
+            <div class="example-row">
+              <span class="ex-label">快速搜：</span>
+              <el-tag v-for="ex in examples" :key="ex" class="ex-chip" @click="quickSearch(ex)">{{ ex }}</el-tag>
+            </div>
+          </div>
+
+          <div v-if="searched" class="result-meta inline-result-meta">
+            <template v-if="results.length">
+              找到 <strong>{{ results.length }}</strong> 个相关仓库，关键词：<el-tag size="small">{{ lastQ }}</el-tag>
+            </template>
+            <template v-else>未找到与「{{ lastQ }}」相关的代码，请换个关键词。</template>
+          </div>
         </el-card>
       </el-col>
 
-      <el-col :xs="24" :md="24" :xl="8">
-        <el-card header="涉及领域" class="summary-card">
-          <el-scrollbar v-if="fwBlocks.length" class="summary-scroll">
+      <el-col :xs="24" :xl="8" class="workspace-col">
+        <el-card header="涉及领域" class="summary-card domain-card">
+          <el-scrollbar v-if="fwBlocks.length" class="domain-scroll">
             <div class="fw-grid">
               <div v-for="fw in fwBlocks" :key="fw.name" class="fw-block"
                 :style="{ background: fw.bg, borderColor: fw.color }">
@@ -147,7 +147,10 @@
                   <span class="fw-swatch" :style="{ background: fw.color }" />
                   <div class="fw-name">{{ fw.name }}</div>
                 </div>
-                <div class="fw-cnt">{{ fw.count }} 个仓库</div>
+                <div class="fw-cnt">
+                  <strong>{{ fw.count }}</strong>
+                  <span>个仓库</span>
+                </div>
               </div>
             </div>
           </el-scrollbar>
@@ -155,6 +158,101 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-card v-if="searched" class="result-section">
+      <template #header>
+        <div class="result-section-header">
+          <span>搜索结果</span>
+          <span class="result-section-keyword">关键词：{{ lastQ }}</span>
+        </div>
+      </template>
+
+      <div class="results" v-if="results.length">
+        <div class="result-card" v-for="item in results" :key="item.repoId">
+          <div class="rc-header">
+            <div class="rc-left">
+              <span class="provider-badge">{{ providerIcon(item.provider || item.githubUrl) }}</span>
+              <el-link @click="$router.push(`/repos/${item.repoId}`)" class="rc-name" style="cursor:pointer">{{ item.repoName }}</el-link>
+              <el-tag v-if="item.language" size="small" effect="plain">{{ item.language }}</el-tag>
+              <span v-if="item.starCount !== null && item.starCount !== undefined" class="rc-stars">⭐ {{ fmtNum(item.starCount) }}</span>
+              <el-tag size="small" type="warning">匹配 {{ item.score.toFixed(1) }}</el-tag>
+            </div>
+            <div>
+              <el-button size="small" @click="$router.push(`/repos/${item.repoId}`)">详情</el-button>
+              <el-button size="small" type="success" @click="$router.push(`/graph?repoId=${item.repoId}`)">图谱</el-button>
+            </div>
+          </div>
+          <p v-if="item.snippet" class="rc-snippet" v-html="hl(item.snippet, lastQ)" />
+          <div v-if="topicsOf(item)" class="rc-topics">
+            <el-tag v-for="t in topicsOf(item)" :key="t" size="small" effect="plain" class="rc-topic">{{ t }}</el-tag>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="未找到相关代码仓库" :image-size="60" />
+    </el-card>
+
+    <!-- ═══ 仓库列表 ═══ -->
+    <el-card class="repo-catalog-card" v-loading="repoCatalogLoading">
+      <template #header>
+        <div class="repo-catalog-header">
+          <div class="repo-catalog-title-wrap">
+            <span>仓库列表</span>
+            <span class="repo-catalog-sub">共 {{ repoCatalog.length }} 个仓库，默认按最新更新时间排序</span>
+          </div>
+          <el-select v-model="repoSort" size="small" class="repo-sort-select">
+            <el-option
+              v-for="option in repoSortOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </div>
+      </template>
+
+      <div v-if="pagedRepoCatalog.length" class="repo-list">
+        <div v-for="repo in pagedRepoCatalog" :key="repo.id" class="repo-list-row">
+          <div class="repo-list-main">
+            <span class="provider-badge repo-list-provider">{{ providerIcon(repo.provider || repo.githubUrl) }}</span>
+            <div class="repo-list-body">
+              <div class="repo-list-topline">
+                <el-link @click="$router.push(`/repos/${repo.id}`)" class="repo-list-name" style="cursor:pointer">{{ repo.name }}</el-link>
+                <span class="repo-list-time">{{ formatRepoTimestamp(repo.updatedAt || repo.createdAt) }}</span>
+              </div>
+              <div class="repo-list-meta">
+                <span class="repo-list-kb">{{ kbName(repo.kbId) }}</span>
+                <el-tag v-if="repo.language" size="small" effect="plain">{{ repo.language }}</el-tag>
+                <span v-if="repo.starCount !== null && repo.starCount !== undefined" class="repo-list-stars">⭐ {{ fmtNum(repo.starCount) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="repo-list-statuses">
+            <el-tag size="small" effect="plain" :type="repoStatusTagType(repo.status)">
+              仓库 {{ repoStatusLabel(repo.status) }}
+            </el-tag>
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="graphTaskStatusTagType(repo.latestGraphTask?.status || 'NONE')"
+            >
+              图任务 {{ graphTaskStatusLabel(repo.latestGraphTask?.status || 'NONE') }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else-if="!repoCatalogLoading" class="summary-empty repo-catalog-empty" description="暂无仓库" :image-size="50" />
+
+      <div v-if="repoCatalog.length" class="repo-pagination">
+        <span class="repo-pagination-summary">第 {{ repoPage }} / {{ repoPageCount }} 页</span>
+        <el-pagination
+          v-model:current-page="repoPage"
+          :page-size="repoPageSize"
+          :total="sortedRepoCatalog.length"
+          layout="prev, pager, next"
+          background
+        />
+      </div>
+    </el-card>
 
     <!-- ═══ 多平台导入对话框 ═══ -->
     <el-dialog v-model="importOpen" title="导入代码仓库" width="560px" :close-on-click-modal="false">
@@ -338,64 +436,11 @@
       </el-tabs>
     </el-dialog>
 
-    <!-- ═══ 搜索区 ═══ -->
-    <el-card class="search-section">
-      <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span>🔍 代码检索</span>
-          <span class="search-hint">在已导入的仓库中搜索（demo：基于摘要 + 标签匹配）</span>
-        </div>
-      </template>
-
-      <div class="search-bar-wrap">
-        <el-input v-model="query" size="large" placeholder="输入关键词，例如：payment、UserService、Spring Boot..."
-          clearable @keyup.enter="doSearch">
-          <template #prefix><el-icon><IconSearch /></el-icon></template>
-          <template #append>
-            <el-button type="primary" :loading="searching" @click="doSearch">搜索</el-button>
-          </template>
-        </el-input>
-        <div class="example-row">
-          <span class="ex-label">快速搜：</span>
-          <el-tag v-for="ex in examples" :key="ex" class="ex-chip" @click="quickSearch(ex)">{{ ex }}</el-tag>
-        </div>
-      </div>
-
-      <div v-if="searched" class="result-meta">
-        <template v-if="results.length">
-          找到 <strong>{{ results.length }}</strong> 个相关仓库，关键词：<el-tag size="small">{{ lastQ }}</el-tag>
-        </template>
-        <template v-else>未找到与「{{ lastQ }}」相关的代码，请换个关键词。</template>
-      </div>
-
-      <div class="results" v-if="results.length">
-        <div class="result-card" v-for="item in results" :key="item.repoId">
-          <div class="rc-header">
-            <div class="rc-left">
-              <span class="provider-badge">{{ providerIcon(item.provider || item.githubUrl) }}</span>
-              <el-link @click="$router.push(`/repos/${item.repoId}`)" class="rc-name" style="cursor:pointer">{{ item.repoName }}</el-link>
-              <el-tag v-if="item.language" size="small" effect="plain">{{ item.language }}</el-tag>
-              <span v-if="item.starCount" class="rc-stars">⭐ {{ fmtNum(item.starCount) }}</span>
-              <el-tag size="small" type="warning">匹配 {{ item.score.toFixed(1) }}</el-tag>
-            </div>
-            <div>
-              <el-button size="small" @click="$router.push(`/repos/${item.repoId}`)">详情</el-button>
-              <el-button size="small" type="success" @click="$router.push(`/graph?repoId=${item.repoId}`)">图谱</el-button>
-            </div>
-          </div>
-          <p v-if="item.snippet" class="rc-snippet" v-html="hl(item.snippet, lastQ)" />
-          <div v-if="topicsOf(item)" class="rc-topics">
-            <el-tag v-for="t in topicsOf(item)" :key="t" size="small" effect="plain" class="rc-topic">{{ t }}</el-tag>
-          </div>
-        </div>
-      </div>
-    </el-card>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile, UploadInstance } from 'element-plus'
 import client from '@/api/client'
@@ -410,11 +455,22 @@ import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStat
 const kbList = ref<KnowledgeBase[]>([])
 const repoCatalog = ref<KbRepo[]>([])
 const repoCatalogLoading = ref(false)
+const repoSort = ref<'stars' | 'name-asc' | 'name-desc' | 'updated-asc' | 'updated-desc'>('updated-desc')
+const repoPage = ref(1)
+const repoPageSize = 8
 const REPO_POLL_MAX_ATTEMPTS = 60
 const REPO_POLL_INTERVAL_MS = 2000
 const pollingRepoIds = new Set<number>()
 const retriedRepoIds = new Set<number>()
 let isActive = true
+
+const repoSortOptions = [
+  { label: '星数', value: 'stars' },
+  { label: '仓库首字母 A-Z', value: 'name-asc' },
+  { label: '仓库首字母 Z-A', value: 'name-desc' },
+  { label: '更新时间最早优先', value: 'updated-asc' },
+  { label: '更新时间最新优先', value: 'updated-desc' },
+] as const
 
 onUnmounted(() => {
   isActive = false
@@ -446,15 +502,51 @@ async function loadRepoCatalog(showLoading = true) {
     )
     repoCatalog.value = reposByKb
       .flat()
-      .sort((a, b) => {
-        const starDiff = (b.starCount ?? 0) - (a.starCount ?? 0)
-        if (starDiff !== 0) return starDiff
-        return a.name.localeCompare(b.name)
-      })
+    repoPage.value = 1
   } finally {
     if (showLoading) repoCatalogLoading.value = false
   }
 }
+
+const sortedRepoCatalog = computed(() => {
+  const collator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true })
+  return [...repoCatalog.value].sort((a, b) => {
+    if (repoSort.value === 'stars') {
+      const starDiff = (b.starCount ?? 0) - (a.starCount ?? 0)
+      if (starDiff !== 0) return starDiff
+      return collator.compare(a.name, b.name)
+    }
+    if (repoSort.value === 'name-asc') {
+      return collator.compare(a.name, b.name)
+    }
+    if (repoSort.value === 'name-desc') {
+      return collator.compare(b.name, a.name)
+    }
+    const aTime = repoTimestampValue(a.updatedAt || a.createdAt)
+    const bTime = repoTimestampValue(b.updatedAt || b.createdAt)
+    if (aTime !== bTime) {
+      return repoSort.value === 'updated-asc' ? aTime - bTime : bTime - aTime
+    }
+    return collator.compare(a.name, b.name)
+  })
+})
+
+const repoPageCount = computed(() => Math.max(1, Math.ceil(sortedRepoCatalog.value.length / repoPageSize)))
+
+const pagedRepoCatalog = computed(() => {
+  const start = (repoPage.value - 1) * repoPageSize
+  return sortedRepoCatalog.value.slice(start, start + repoPageSize)
+})
+
+watch(repoSort, () => {
+  repoPage.value = 1
+})
+
+watch(repoPageCount, (count) => {
+  if (repoPage.value > count) {
+    repoPage.value = count
+  }
+})
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -770,6 +862,24 @@ function kbName(kbId: number) {
   return kbList.value.find(kb => kb.id === kbId)?.name || `知识库 #${kbId}`
 }
 
+function repoTimestampValue(value?: string) {
+  if (!value) return 0
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? 0 : time
+}
+
+function formatRepoTimestamp(value?: string) {
+  if (!value) return '更新时间未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '更新时间未知'
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  return `更新于 ${yyyy}-${mm}-${dd} ${hh}:${mi}`
+}
+
 function fmtNum(n: number) {
   if (!n && n !== 0) return '-'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
@@ -845,16 +955,23 @@ function fmtNum(n: number) {
 .pb-label { font-size: 11px; color: #69758a; text-align: center; }
 
 /* bottom row */
-.bottom-row { margin-bottom: 20px; }
-.bottom-row > .el-col { display: flex; }
+.featured-row,
+.workspace-row { margin-bottom: 16px; }
+.featured-col,
+.workspace-col { display: flex; }
 .summary-card { width: 100%; height: 100%; }
 .summary-card :deep(.el-card__body) {
   display: flex;
   flex-direction: column;
 }
+.featured-card :deep(.el-card__body) { padding-top: 18px; }
 .summary-scroll { height: 300px; padding-right: 4px; }
 .summary-empty { height: 300px; display: flex; align-items: center; justify-content: center; }
-.star-list { display: flex; flex-direction: column; gap: 0; }
+.star-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
 .star-row {
   display: flex;
   align-items: flex-start;
@@ -880,6 +997,13 @@ function fmtNum(n: number) {
   align-items: flex-start;
   gap: 6px;
 }
+.star-topline {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
 .star-name {
   display: inline-block;
   max-width: 100%;
@@ -894,7 +1018,6 @@ function fmtNum(n: number) {
   font-size: 13px;
   font-weight: 600;
   color: #475569;
-  margin-top: 4px;
 }
 .provider-pill {
   display: inline-flex;
@@ -909,25 +1032,68 @@ function fmtNum(n: number) {
 .provider-icon { font-size: 14px; }
 .provider-badge { font-size: 18px; flex-shrink: 0; }
 
-.repo-list { display: flex; flex-direction: column; gap: 10px; }
+.domain-card :deep(.el-card__body) { padding-top: 18px; }
+.domain-scroll { height: 280px; padding-right: 4px; }
+
+.repo-catalog-card {
+  margin-top: 18px;
+}
+.repo-catalog-header,
+.result-section-header,
+.search-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.repo-catalog-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.repo-catalog-sub,
+.result-section-keyword {
+  font-size: 12px;
+  color: #69758a;
+}
+.repo-sort-select {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.repo-list { display: flex; flex-direction: column; gap: 0; }
 .repo-list-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
+  padding: 14px 0;
   border-bottom: 1px solid #edf2f7;
 }
 .repo-list-row:last-child { border-bottom: 0; }
 .repo-list-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1; }
 .repo-list-provider { margin-top: 2px; }
 .repo-list-body { min-width: 0; flex: 1; }
+.repo-list-topline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
 .repo-list-name {
   display: inline-block;
   max-width: 100%;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.4;
+}
+.repo-list-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 .repo-list-meta {
   display: flex;
@@ -947,15 +1113,32 @@ function fmtNum(n: number) {
   gap: 6px;
   flex-shrink: 0;
 }
+.repo-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #edf2f7;
+  flex-wrap: wrap;
+}
+.repo-pagination-summary {
+  font-size: 12px;
+  color: #69758a;
+}
+.repo-catalog-empty {
+  height: 220px;
+}
 
 /* frameworks */
 .fw-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 10px;
 }
 .fw-block {
-  padding: 12px 14px;
+  padding: 14px 14px;
   border-radius: 10px;
   border: 1px solid;
   min-width: 0;
@@ -979,6 +1162,9 @@ function fmtNum(n: number) {
   line-height: 1.35;
 }
 .fw-cnt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   font-size: 12px;
   color: #69758a;
   margin-top: 8px;
@@ -988,15 +1174,32 @@ function fmtNum(n: number) {
 @media (max-width: 1199px) {
   .summary-scroll,
   .summary-empty { height: 280px; }
-  .fw-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .star-grid { grid-template-columns: 1fr; }
+  .domain-scroll { height: 260px; }
 }
 
 @media (max-width: 991px) {
   .chart-col,
-  .bottom-row > .el-col { display: block; }
+  .featured-col,
+  .workspace-col { display: block; }
   .chart-card { min-height: 0; }
   .chart-card :deep(.el-card__body) { min-height: 0; }
   .fw-grid { grid-template-columns: 1fr; }
+  .repo-list-row,
+  .repo-list-topline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .repo-list-statuses {
+    align-items: flex-start;
+  }
+  .repo-sort-select {
+    width: 100%;
+  }
+  .repo-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* import dialog */
@@ -1010,6 +1213,15 @@ function fmtNum(n: number) {
 
 /* search */
 .search-section { margin-top: 0; }
+.search-card {
+  height: 100%;
+}
+.search-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 280px;
+}
 .search-hint { font-size: 12px; color: #aaa; }
 .search-bar-wrap { margin-bottom: 12px; }
 .example-row { margin-top: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -1017,6 +1229,8 @@ function fmtNum(n: number) {
 .ex-chip { cursor: pointer; }
 .ex-chip:hover { background: #e6f4f1; border-color: #0c7c59; color: #0c7c59; }
 .result-meta { margin: 10px 0; font-size: 13px; color: #4a5568; }
+.inline-result-meta { margin-bottom: 0; }
+.result-section { margin-top: 18px; }
 .results { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .result-card {
   border: 1px solid #e2e8f0; border-radius: 10px;
