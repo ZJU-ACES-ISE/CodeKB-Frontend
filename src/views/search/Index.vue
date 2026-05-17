@@ -708,10 +708,13 @@ async function importLocal() {
       kbId: localForm.value.kbId,
       githubUrl: 'local://' + localForm.value.path,
       provider: 'local',
+      repoName: localForm.value.name.trim() || undefined,
       ref: undefined,
       depth: 0,
     })
     ElMessage.success('本地目录导入任务已创建')
+    localForm.value.path = ''
+    localForm.value.name = ''
     await onImported(result)
   } catch (e: any) {
     ElMessage.error(e?.message || '导入失败')

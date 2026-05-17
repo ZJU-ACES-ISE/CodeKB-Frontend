@@ -67,6 +67,7 @@ export interface ImportRepoInput {
   kbId: number;
   githubUrl: string;
   provider?: string;
+  repoName?: string;
   ref?: string;
   depth?: number;
 }
