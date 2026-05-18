@@ -81,7 +81,7 @@
     <el-row :gutter="16" class="featured-row" v-if="stats">
       <el-col :span="24" class="featured-col">
         <el-card header="⭐ 最受关注仓库" class="summary-card featured-card">
-          <div v-if="stats.topStarRepos.length" class="star-grid">
+          <div v-if="Array.isArray(stats.topStarRepos) && stats.topStarRepos.length" class="star-grid">
             <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
               <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
                 {{ i + 1 }}
@@ -478,7 +478,8 @@ onUnmounted(() => {
 
 async function loadKbs() {
   try {
-    kbList.value = await knowledgeApi.list()
+    const data = await knowledgeApi.list()
+    kbList.value = Array.isArray(data) ? data : []
   } catch {
     kbList.value = []
   }
@@ -494,7 +495,8 @@ async function loadRepoCatalog(showLoading = true) {
     const reposByKb = await Promise.all(
       kbList.value.map(async (kb) => {
         try {
-          return await knowledgeApi.repos(kb.id)
+          const data = await knowledgeApi.repos(kb.id)
+          return Array.isArray(data) ? data : []
         } catch {
           return [] as KbRepo[]
         }
@@ -645,7 +647,12 @@ function submitGitlab() { submitForm(gitlabForm, gitlabSubmitting, 'gitlab') }
 const stats = ref<any>(null)
 
 async function loadStats() {
-  try { stats.value = await client.get('/search/stats') } catch {}
+  try {
+    const data = await client.get('/search/stats')
+    stats.value = data && typeof data === 'object' ? data : null
+  } catch {
+    stats.value = null
+  }
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -718,7 +725,7 @@ const STATUS_META = [
 ]
 const statusBlocks = computed(() => {
   if (!stats.value) return []
-  const dist = (stats.value.repoStatusDistribution ?? stats.value.statusDistribution) as Record<string, number>
+  const dist = ((stats.value.repoStatusDistribution ?? stats.value.statusDistribution ?? {}) as Record<string, number>)
   const total = stats.value.repoCount || 1
   return STATUS_META.map(s => ({
     ...s,

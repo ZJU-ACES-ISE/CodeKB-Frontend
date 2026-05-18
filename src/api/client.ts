@@ -2,8 +2,10 @@ import axios, { type AxiosResponse, AxiosError } from 'axios';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || '/api/v1';
+
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: apiBaseUrl,
   timeout: 15000,
 });
 
