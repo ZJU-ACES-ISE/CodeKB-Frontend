@@ -121,8 +121,12 @@
           :matched-node-ids="effectiveMatchedNodeIds"
           :highlighted-edge-keys="effectiveHighlightedEdgeKeys"
           :focused-node-id="activeHighlightedNodeId"
+          :selected-node-id="selectedGraphNodeId"
+          :selected-edge-key="selectedGraphEdgeKey"
           @select="onSelectNode"
           @select-edge="onSelectEdge"
+          @toggle-node-select="onToggleNodeSelection"
+          @toggle-edge-select="onToggleEdgeSelection"
           @blank-click="onCanvasBlankClick"
           @stats="onStats"
         />
@@ -220,6 +224,17 @@
                 <span class="k">Type</span><span>{{ selectedNode.node_type }}</span>
                 <span class="k">File</span><span>{{ selectedNode.file_path || '-' }}</span>
                 <span class="k">Lines</span><span>{{ selectedNode.start_line }} - {{ selectedNode.end_line }}</span>
+                <span class="k">&#28304;&#30721;</span>
+                <span>
+                  <a
+                    v-if="selectedNodeSourceUrl"
+                    :href="selectedNodeSourceUrl"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="detail-link"
+                  >&#25171;&#24320;&#23450;&#20301;</a>
+                  <span v-else>-</span>
+                </span>
               </div>
               <pre class="code-block">{{ selectedNode.code || '' }}</pre>
             </template>
@@ -276,12 +291,19 @@ const searchNodeTypes = ref<string[]>([])
 const focusedSearchNodeId = ref<string | null>(null)
 const hoveredSearchNodeId = ref<string | null>(null)
 const pinnedSearchNodeId = ref<string | null>(null)
+const selectedGraphNodeId = ref<string | null>(null)
+const selectedGraphEdgeKey = ref<string | null>(null)
 const searchPanelMinimized = ref(false)
 const detailPanelMinimized = ref(false)
-const detailPanelPinned = ref(false)
+const manualDetailPanelPinned = ref(false)
+const detailSelectionPinned = ref(false)
+const detailPanelPinned = computed(() => manualDetailPanelPinned.value || detailSelectionPinned.value)
 
 const typeCountEntries = computed(() =>
   graph.value ? Object.entries(graph.value.metadata.graph_type_counts) : []
+)
+const currentRepo = computed(() =>
+  repoList.value.find((repo) => repo.id === selectedRepoId.value) || null
 )
 
 const detailPanelVisible = computed(() => !!selectedNode.value || !!selectedEdge.value)
@@ -430,6 +452,8 @@ const edgeTitle = computed(() => {
   return `${edgeSourceLabel.value} -> ${edgeTargetLabel.value}`
 })
 
+const selectedNodeSourceUrl = computed(() => buildNodeSourceUrl(currentRepo.value, selectedNode.value))
+
 onMounted(async () => {
   try {
     kbList.value = await knowledgeApi.list()
@@ -475,6 +499,9 @@ watch(graph, () => {
   focusedSearchNodeId.value = null
   hoveredSearchNodeId.value = null
   pinnedSearchNodeId.value = null
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = null
+  detailSelectionPinned.value = false
   searchPanelMinimized.value = false
   detailPanelMinimized.value = false
 })
@@ -485,6 +512,9 @@ async function onKbChange(kbId: number) {
   graph.value = null
   selectedEdge.value = null
   selectedNode.value = null
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = null
+  detailSelectionPinned.value = false
   try { repoList.value = await knowledgeApi.repos(kbId) }
   catch (e: any) { ElMessage.error(e?.message || '加载仓库失败') }
 }
@@ -493,6 +523,9 @@ async function onRepoChange(repoId: number | null) {
   if (!repoId) return
   selectedNode.value = null
   selectedEdge.value = null
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = null
+  detailSelectionPinned.value = false
   graph.value = null
   task.value = null
   try {
@@ -555,6 +588,10 @@ function handleFit() {
 function clearDetail() {
   selectedNode.value = null
   selectedEdge.value = null
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = null
+  detailSelectionPinned.value = false
+  manualDetailPanelPinned.value = false
 }
 
 function toggleSearchPanelMinimized() {
@@ -566,7 +603,7 @@ function toggleDetailPanelMinimized() {
 }
 
 function toggleDetailPanelPinned() {
-  detailPanelPinned.value = !detailPanelPinned.value
+  manualDetailPanelPinned.value = !manualDetailPanelPinned.value
 }
 
 function clearSearch() {
@@ -614,9 +651,41 @@ function onSelectEdge(edge: GraphEdge) {
   }
 }
 
+function onToggleNodeSelection(node: GraphNode) {
+  const selecting = selectedGraphNodeId.value !== node.id
+  selectedGraphEdgeKey.value = null
+  selectedGraphNodeId.value = selecting ? node.id : null
+  detailSelectionPinned.value = selecting
+  if (selecting) {
+    selectedNode.value = node
+    selectedEdge.value = null
+    if (detailPanelMinimized.value) {
+      detailPanelMinimized.value = false
+    }
+  }
+}
+
+function onToggleEdgeSelection(edge: GraphEdge) {
+  const key = edgeKey(edge)
+  const selecting = selectedGraphEdgeKey.value !== key
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = selecting ? key : null
+  detailSelectionPinned.value = selecting
+  if (selecting) {
+    selectedNode.value = null
+    selectedEdge.value = edge
+    if (detailPanelMinimized.value) {
+      detailPanelMinimized.value = false
+    }
+  }
+}
+
 function onCanvasBlankClick() {
   pinnedSearchNodeId.value = null
   hoveredSearchNodeId.value = null
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeKey.value = null
+  detailSelectionPinned.value = false
 }
 
 function toggleType(type: string) {
@@ -632,6 +701,116 @@ function onStats(stats: { nodes: number; edges: number }) {
 function formatEdgeNumber(value: number | null | undefined) {
   if (value == null) return '-'
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function buildNodeSourceUrl(repo: KbRepo | null, node: GraphNode | null) {
+  if (!repo || !node?.file_path) return null
+  const provider = resolveRepoProvider(repo)
+  if (!provider || provider === 'local' || provider === 'zip' || provider === 'other') return null
+
+  const ref = firstNonBlank(repo.ref, repo.defaultBranch)
+  if (!ref) return null
+
+  const filePath = encodePathSegments(node.file_path)
+  if (!filePath) return null
+
+  const anchor = buildLineAnchor(provider, node.start_line, node.end_line)
+
+  if (provider === 'github') {
+    const base = buildSimpleRepoBase('https://github.com', repo)
+    return base ? `${base}/blob/${encodeURIComponent(ref)}/${filePath}${anchor}` : null
+  }
+
+  if (provider === 'gitee') {
+    const base = buildSimpleRepoBase('https://gitee.com', repo)
+    return base ? `${base}/blob/${encodeURIComponent(ref)}/${filePath}${anchor}` : null
+  }
+
+  if (provider === 'gitlab') {
+    const host = extractGitlabHost(repo.githubUrl)
+    const projectPath = buildProjectPath(repo)
+    if (!host || !projectPath) return null
+    return `https://${host}/${projectPath}/-/blob/${encodeURIComponent(ref)}/${filePath}${anchor}`
+  }
+
+  return null
+}
+
+function resolveRepoProvider(repo: KbRepo) {
+  const provider = repo.provider?.trim().toLowerCase()
+  if (provider === 'github' || provider === 'gitee' || provider === 'gitlab' || provider === 'local' || provider === 'zip') {
+    return provider
+  }
+  const url = repo.githubUrl?.toLowerCase() || ''
+  if (url.includes('github.com')) return 'github'
+  if (url.includes('gitee.com')) return 'gitee'
+  if (url.includes('gitlab')) return 'gitlab'
+  return 'other'
+}
+
+function buildSimpleRepoBase(origin: string, repo: KbRepo) {
+  const projectPath = buildProjectPath(repo)
+  return projectPath ? `${origin}/${projectPath}` : null
+}
+
+function buildProjectPath(repo: KbRepo) {
+  const owner = repo.owner?.trim().replace(/^\/+|\/+$/g, '')
+  const name = repo.repo?.trim().replace(/^\/+|\/+$/g, '')
+  if (!owner || !name) return null
+  return [...owner.split('/'), name]
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
+function extractGitlabHost(rawUrl?: string | null) {
+  if (!rawUrl) return 'gitlab.com'
+  try {
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('ssh://')) {
+      return new URL(rawUrl).host || 'gitlab.com'
+    }
+  } catch {
+    return 'gitlab.com'
+  }
+  const scpLike = rawUrl.match(/^(?:[^@]+@)?([^:/]+):/)
+  return scpLike?.[1] || 'gitlab.com'
+}
+
+function encodePathSegments(path: string) {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
+function buildLineAnchor(provider: string, startLine?: number | null, endLine?: number | null) {
+  const start = normalizePositiveLine(startLine)
+  if (!start) return ''
+  const end = normalizePositiveLine(endLine)
+  if (!end || end <= start) {
+    return `#L${start}`
+  }
+  if (provider === 'gitlab') {
+    return `#L${start}-${end}`
+  }
+  return `#L${start}-L${end}`
+}
+
+function normalizePositiveLine(line?: number | null) {
+  if (line == null) return null
+  const num = Number(line)
+  if (!Number.isFinite(num) || num < 1) return null
+  return Math.trunc(num)
+}
+
+function firstNonBlank(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (value != null && value.trim() !== '') {
+      return value.trim()
+    }
+  }
+  return null
 }
 </script>
 
@@ -914,6 +1093,13 @@ function formatEdgeNumber(value: number | null | undefined) {
 
 .detail-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; word-break: break-word; }
 .detail-empty { padding: 16px 4px; font-size: 12px; color: #69758a; }
+.detail-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.detail-link:hover {
+  text-decoration: underline;
+}
 
 .kv {
   display: grid;

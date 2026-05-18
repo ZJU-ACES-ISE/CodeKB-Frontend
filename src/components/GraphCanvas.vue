@@ -10,6 +10,8 @@ interface Props {
   matchedNodeIds?: Set<string>;
   highlightedEdgeKeys?: Set<string>;
   focusedNodeId?: string | null;
+  selectedNodeId?: string | null;
+  selectedEdgeKey?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -17,6 +19,8 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   select: [node: GraphNode];
   'select-edge': [edge: GraphEdge];
+  'toggle-node-select': [node: GraphNode];
+  'toggle-edge-select': [edge: GraphEdge];
   'blank-click': [];
   stats: [stats: { nodes: number; edges: number }];
 }>();
@@ -186,6 +190,14 @@ function onSelectEdge(edge: PositionedEdge) {
   emit('select-edge', edge.raw);
 }
 
+function onToggleNodeSelect(node: PositionedNode) {
+  emit('toggle-node-select', node);
+}
+
+function onToggleEdgeSelect(edge: PositionedEdge) {
+  emit('toggle-edge-select', edge.raw);
+}
+
 function labelText(node: PositionedNode): string {
   const raw = node.label || node.id;
   return String(raw).slice(0, 34);
@@ -194,25 +206,31 @@ function labelText(node: PositionedNode): string {
 function nodeClasses(node: PositionedNode) {
   const matched = props.matchedNodeIds?.has(node.id) ?? false;
   const focused = props.focusedNodeId === node.id;
+  const selected = props.selectedNodeId === node.id;
   return {
     'is-match': matched,
     'is-focused': focused,
-    'is-dim': hasMatches.value && !matched,
+    'is-selected': selected,
+    'is-dim': hasMatches.value && !matched && !selected,
   };
 }
 
 function labelClasses(node: PositionedNode) {
+  const selected = props.selectedNodeId === node.id;
   return {
-    'is-dim': hasMatches.value && !(props.matchedNodeIds?.has(node.id) ?? false),
+    'is-dim': hasMatches.value && !(props.matchedNodeIds?.has(node.id) ?? false) && !selected,
     'is-focused': props.focusedNodeId === node.id,
+    'is-selected': selected,
   };
 }
 
 function edgeClasses(edge: PositionedEdge) {
   const highlighted = props.highlightedEdgeKeys?.has(edge.key) ?? false;
+  const selected = props.selectedEdgeKey === edge.key;
   return {
     'is-related': highlighted,
-    'is-dim': hasMatches.value && !highlighted,
+    'is-selected': selected,
+    'is-dim': hasMatches.value && !highlighted && !selected,
   };
 }
 
@@ -239,7 +257,7 @@ function onBackgroundClick(event: MouseEvent) {
           :key="`e-${idx}-${edge.sourceId}-${edge.targetId}`"
           class="edge-group"
           @mouseenter="onSelectEdge(edge)"
-          @click="onSelectEdge(edge)"
+          @mousedown.stop.prevent="onToggleEdgeSelect(edge)"
         >
           <line
             class="edge"
@@ -266,7 +284,7 @@ function onBackgroundClick(event: MouseEvent) {
           :key="node.id"
           class="node-group"
           @mouseenter="onSelect(node)"
-          @click="onSelect(node)"
+          @mousedown.stop.prevent="onToggleNodeSelect(node)"
         >
           <circle
             class="node"
@@ -339,6 +357,11 @@ function onBackgroundClick(event: MouseEvent) {
   stroke-opacity: 0.9;
 }
 
+.edge-group:hover .edge.is-selected {
+  stroke: #ec4899;
+  stroke-opacity: 0.95;
+}
+
 .node {
   stroke: #fff;
   stroke-width: 1.5;
@@ -367,6 +390,19 @@ function onBackgroundClick(event: MouseEvent) {
   stroke-width: 2;
 }
 
+.node.is-selected {
+  stroke: #ec4899;
+  stroke-width: 3.4;
+  opacity: 1;
+  filter: drop-shadow(0 0 14px rgba(236, 72, 153, 0.45));
+}
+
+.edge.is-selected {
+  stroke: #ec4899;
+  stroke-opacity: 0.95;
+  stroke-width: 3;
+}
+
 .node-label {
   font-size: 10px;
   fill: #263247;
@@ -380,6 +416,11 @@ function onBackgroundClick(event: MouseEvent) {
 
 .node-label.is-focused {
   fill: #172033;
+  font-weight: 700;
+}
+
+.node-label.is-selected {
+  fill: #be185d;
   font-weight: 700;
 }
 
