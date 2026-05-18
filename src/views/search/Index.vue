@@ -79,33 +79,56 @@
 
     <!-- ═══ Star 排行 ═══ -->
     <el-row :gutter="16" class="featured-row" v-if="stats">
-      <el-col :span="24" class="featured-col">
+      <el-col :xs="24" :lg="12" :xl="12" class="featured-col">
         <el-card header="⭐ 最受关注仓库" class="summary-card featured-card">
-          <div v-if="Array.isArray(stats.topStarRepos) && stats.topStarRepos.length" class="star-grid">
-            <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
-              <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
-                {{ i + 1 }}
-              </span>
-              <div class="star-body">
-                <div class="star-topline">
-                  <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
-                  <span class="star-count">⭐ {{ fmtNum(r.starCount ?? 0) }}</span>
-                </div>
-                <div class="star-meta">
-                  <span class="provider-pill">{{ providerIcon(r.provider || r.githubUrl) }}</span>
-                  <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
+          <el-scrollbar v-if="Array.isArray(stats.topStarRepos) && stats.topStarRepos.length" class="star-scroll">
+            <div class="star-list">
+              <div v-for="(r, i) in stats.topStarRepos" :key="r.repoId" class="star-row">
+                <span class="star-idx" :class="{ gold: i === 0, silver: i === 1, bronze: i === 2 }">
+                  {{ i + 1 }}
+                </span>
+                <div class="star-body">
+                  <div class="star-topline">
+                    <el-link @click="$router.push(`/repos/${r.repoId}`)" class="star-name" style="cursor:pointer">{{ r.name }}</el-link>
+                    <span class="star-count">{{ fmtNum(r.starCount ?? 0) }}</span>
+                  </div>
+                  <div class="star-meta">
+                    <span class="provider-pill">{{ providerIcon(r.provider || r.githubUrl) }}</span>
+                    <el-tag v-if="r.language" size="small" effect="plain">{{ r.language }}</el-tag>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </el-scrollbar>
           <el-empty v-else description="暂无数据" class="summary-empty" :image-size="50" />
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :lg="12" :xl="12" class="featured-col">
+        <el-card header="涉及领域" class="summary-card domain-card">
+          <el-scrollbar v-if="fwBlocks.length" class="domain-scroll">
+            <div class="fw-grid">
+              <div v-for="fw in fwBlocks" :key="fw.name" class="fw-block"
+                :style="{ background: fw.bg, borderColor: fw.color }">
+                <div class="fw-head">
+                  <span class="fw-swatch" :style="{ background: fw.color }" />
+                  <div class="fw-name">{{ fw.name }}</div>
+                </div>
+                <div class="fw-cnt">
+                  <strong>{{ fw.count }}</strong>
+                  <span>个仓库</span>
+                </div>
+              </div>
+            </div>
+          </el-scrollbar>
+          <el-empty v-else description="导入仓库后自动提取领域信息" class="summary-empty" :image-size="50" />
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- ═══ 检索工作区 ═══ -->
+    <!-- Search workspace -->
     <el-row :gutter="16" class="workspace-row" v-if="stats">
-      <el-col :xs="24" :xl="16" class="workspace-col">
+      <el-col :span="24" class="workspace-col">
         <el-card class="search-section search-card">
           <template #header>
             <div class="search-card-header">
@@ -134,27 +157,6 @@
             </template>
             <template v-else>未找到与「{{ lastQ }}」相关的代码，请换个关键词。</template>
           </div>
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :xl="8" class="workspace-col">
-        <el-card header="涉及领域" class="summary-card domain-card">
-          <el-scrollbar v-if="fwBlocks.length" class="domain-scroll">
-            <div class="fw-grid">
-              <div v-for="fw in fwBlocks" :key="fw.name" class="fw-block"
-                :style="{ background: fw.bg, borderColor: fw.color }">
-                <div class="fw-head">
-                  <span class="fw-swatch" :style="{ background: fw.color }" />
-                  <div class="fw-name">{{ fw.name }}</div>
-                </div>
-                <div class="fw-cnt">
-                  <strong>{{ fw.count }}</strong>
-                  <span>个仓库</span>
-                </div>
-              </div>
-            </div>
-          </el-scrollbar>
-          <el-empty v-else description="导入仓库后自动提取领域信息" class="summary-empty" :image-size="50" />
         </el-card>
       </el-col>
     </el-row>
@@ -554,13 +556,62 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
+const REPO_FINAL_STATUSES = new Set(['SUMMARIZED', 'FAILED'])
+const GRAPH_FINAL_STATUSES = new Set(['READY', 'FAILED'])
+
+function graphStatusOf(repo?: Pick<KbRepo, 'latestGraphTask'> | null) {
+  return repo?.latestGraphTask?.status || 'NONE'
+}
+
+function repoStatusIsFinal(status?: string | null) {
+  return REPO_FINAL_STATUSES.has(status || '')
+}
+
+function graphStatusIsFinal(graphStatus?: string | null, repoStatus?: string | null) {
+  const normalized = graphStatus || 'NONE'
+  if (GRAPH_FINAL_STATUSES.has(normalized)) return true
+  // If summary analysis failed, no graph task will be created for this repo.
+  return normalized === 'NONE' && repoStatus === 'FAILED'
+}
+
+function repoPollingSettled(repo?: KbRepo | null) {
+  if (!repo) return false
+  return repoStatusIsFinal(repo.status) && graphStatusIsFinal(graphStatusOf(repo), repo.status)
+}
+
+function mergeRepoSnapshot(nextRepo: KbRepo) {
+  const normalizedRepo = {
+    ...nextRepo,
+    latestGraphTask: nextRepo.latestGraphTask ?? null,
+  }
+  const index = repoCatalog.value.findIndex((item) => item.id === normalizedRepo.id)
+  if (index === -1) {
+    repoCatalog.value = [normalizedRepo, ...repoCatalog.value]
+    return normalizedRepo
+  }
+  repoCatalog.value = repoCatalog.value.map((item, idx) => (
+    idx === index ? { ...item, ...normalizedRepo } : item
+  ))
+  return repoCatalog.value[index]
+}
+
+async function refreshSingleRepoSnapshot(repoId: number) {
+  const detail = await repoApi.get(repoId)
+  if (!detail?.repo) return null
+  const repo = mergeRepoSnapshot({
+    ...detail.repo,
+    latestGraphTask: detail.latestGraphTask ?? detail.repo.latestGraphTask ?? null,
+  })
+  return repo
+}
+
 async function refreshRepoStatusSnapshot(showLoading = false) {
   await Promise.all([loadStats(), loadRepoCatalog(showLoading)])
 }
 
 function pollImportedRepos() {
   repoCatalog.value
-    .filter((repo) => repo.status === 'IMPORTED')
+    .filter((repo) => !repoPollingSettled(repo))
     .forEach((repo) => void pollImportedRepo(repo.id))
 }
 
@@ -569,12 +620,24 @@ async function pollImportedRepo(repoId: number) {
   pollingRepoIds.add(repoId)
   try {
     for (let attempt = 0; attempt < REPO_POLL_MAX_ATTEMPTS && isActive; attempt += 1) {
-      await refreshRepoStatusSnapshot(false)
-      const repo = repoCatalog.value.find((item) => item.id === repoId)
+      const previousRepo = repoCatalog.value.find((item) => item.id === repoId) ?? null
+      const previousKey = previousRepo
+        ? `${previousRepo.status}|${graphStatusOf(previousRepo)}|${previousRepo.updatedAt || ''}`
+        : ''
+
+      let repo: KbRepo | null = null
+      try {
+        repo = await refreshSingleRepoSnapshot(repoId)
+      } catch {
+        repo = previousRepo
+      }
+
+      if (!repo) return
+
+      const graphStatus = graphStatusOf(repo)
       if (
-        repo &&
         repo.status === 'IMPORTED' &&
-        repo.latestGraphTask?.status === 'READY' &&
+        graphStatus === 'READY' &&
         !retriedRepoIds.has(repoId)
       ) {
         retriedRepoIds.add(repoId)
@@ -584,7 +647,13 @@ async function pollImportedRepo(repoId: number) {
           // keep polling even if retry request fails
         }
       }
-      if (repo && repo.status !== 'IMPORTED') {
+
+      const currentKey = `${repo.status}|${graphStatus}|${repo.updatedAt || ''}`
+      const settled = repoPollingSettled(repo)
+      if (previousKey !== currentKey || settled) {
+        await loadStats()
+      }
+      if (settled) {
         return
       }
       await sleep(REPO_POLL_INTERVAL_MS)
@@ -972,13 +1041,10 @@ function fmtNum(n: number) {
   flex-direction: column;
 }
 .featured-card :deep(.el-card__body) { padding-top: 18px; }
+.star-scroll { height: 280px; padding-right: 4px; }
+.star-list { display: flex; flex-direction: column; }
 .summary-scroll { height: 300px; padding-right: 4px; }
 .summary-empty { height: 300px; display: flex; align-items: center; justify-content: center; }
-.star-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 18px;
-}
 .star-row {
   display: flex;
   align-items: flex-start;
@@ -1021,10 +1087,19 @@ function fmtNum(n: number) {
 .star-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .star-count {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
   color: #475569;
+}
+.star-count::before {
+  content: "\2605";
+  color: #f5b301;
+  font-size: 12px;
+  line-height: 1;
 }
 .provider-pill {
   display: inline-flex;
@@ -1141,7 +1216,7 @@ function fmtNum(n: number) {
 /* frameworks */
 .fw-grid {
   display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 .fw-block {
@@ -1181,7 +1256,6 @@ function fmtNum(n: number) {
 @media (max-width: 1199px) {
   .summary-scroll,
   .summary-empty { height: 280px; }
-  .star-grid { grid-template-columns: 1fr; }
   .domain-scroll { height: 260px; }
 }
 
@@ -1191,7 +1265,7 @@ function fmtNum(n: number) {
   .workspace-col { display: block; }
   .chart-card { min-height: 0; }
   .chart-card :deep(.el-card__body) { min-height: 0; }
-  .fw-grid { grid-template-columns: 1fr; }
+  .fw-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .repo-list-row,
   .repo-list-topline {
     flex-direction: column;
@@ -1221,6 +1295,7 @@ function fmtNum(n: number) {
 /* search */
 .search-section { margin-top: 0; }
 .search-card {
+  width: 100%;
   height: 100%;
 }
 .search-card :deep(.el-card__body) {
