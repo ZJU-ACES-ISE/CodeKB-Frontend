@@ -6,6 +6,10 @@ interface Props {
   graph: GraphPayload | null;
   visibleTypes: Set<string>;
   maxNodes: number;
+  pinnedNodeIds?: Set<string>;
+  matchedNodeIds?: Set<string>;
+  highlightedEdgeKeys?: Set<string>;
+  focusedNodeId?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -13,6 +17,7 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   select: [node: GraphNode];
   'select-edge': [edge: GraphEdge];
+  'blank-click': [];
   stats: [stats: { nodes: number; edges: number }];
 }>();
 
@@ -20,7 +25,6 @@ const WIDTH = 1200;
 const HEIGHT = 800;
 
 const COLORS: Record<string, string> = {
-  // ── 原 project 服务 graph_type ──────────────────
   folder_structure:  '#64748b',
   cross_file_deps:   '#2563eb',
   call_graph:        '#0c7c59',
@@ -30,13 +34,12 @@ const COLORS: Record<string, string> = {
   dfg:               '#0891b2',
   type_deps:         '#9333ea',
   code:              '#0c7c59',
-  // ── Graphify 服务 graph_type ─────────────────────
-  file:              '#64748b',   // 灰蓝
-  class:             '#b45309',   // 橙棕
-  interface:         '#8b5cf6',   // 紫
-  function:          '#059669',   // 绿
-  external:          '#2563eb',   // 蓝
-  code_symbol:       '#0891b2',   // 青
+  file:              '#64748b',
+  class:             '#b45309',
+  interface:         '#8b5cf6',
+  function:          '#059669',
+  external:          '#2563eb',
+  code_symbol:       '#0891b2',
 };
 
 interface PositionedNode extends GraphNode {
@@ -55,12 +58,24 @@ interface PositionedEdge {
   sourceId: string;
   targetId: string;
   raw: GraphEdge;
+  key: string;
 }
 
 const positionedNodes = ref<PositionedNode[]>([]);
 const positionedEdges = ref<PositionedEdge[]>([]);
 
 const viewBox = computed(() => `0 0 ${WIDTH} ${HEIGHT}`);
+const hasMatches = computed(() => Boolean(props.matchedNodeIds?.size));
+
+function edgeKey(edge: GraphEdge) {
+  return [
+    edge.source,
+    edge.target,
+    edge.edge_type || '',
+    edge.relation || '',
+    edge.source_location || '',
+  ].join('__');
+}
 
 function filterAndLayout() {
   const graph = props.graph;
@@ -73,10 +88,22 @@ function filterAndLayout() {
 
   const types = props.visibleTypes;
   const maxNodes = props.maxNodes || 700;
+  const pinnedNodeIds = props.pinnedNodeIds || new Set<string>();
 
   let nodes = graph.nodes.filter((n) => types.has(n.graph_type));
   nodes.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  nodes = nodes.slice(0, maxNodes);
+
+  if (nodes.length > maxNodes) {
+    const pinned: GraphNode[] = [];
+    const rest: GraphNode[] = [];
+    nodes.forEach((node) => {
+      if (pinnedNodeIds.has(node.id)) pinned.push(node);
+      else rest.push(node);
+    });
+    const keptPinned = pinned.slice(0, maxNodes);
+    const remainingSlots = Math.max(0, maxNodes - keptPinned.length);
+    nodes = [...keptPinned, ...rest.slice(0, remainingSlots)];
+  }
 
   const ids = new Set(nodes.map((n) => n.id));
   const edges = graph.edges.filter((e: GraphEdge) => ids.has(e.source) && ids.has(e.target));
@@ -137,6 +164,7 @@ function filterAndLayout() {
         sourceId: e.source,
         targetId: e.target,
         raw: e,
+        key: edgeKey(e),
       } satisfies PositionedEdge;
     })
     .filter((e): e is PositionedEdge => e !== null);
@@ -145,7 +173,7 @@ function filterAndLayout() {
 }
 
 watch(
-  () => [props.graph, props.visibleTypes, props.maxNodes],
+  () => [props.graph, props.visibleTypes, props.maxNodes, props.pinnedNodeIds],
   () => filterAndLayout(),
   { immediate: true, deep: true },
 );
@@ -162,6 +190,37 @@ function labelText(node: PositionedNode): string {
   const raw = node.label || node.id;
   return String(raw).slice(0, 34);
 }
+
+function nodeClasses(node: PositionedNode) {
+  const matched = props.matchedNodeIds?.has(node.id) ?? false;
+  const focused = props.focusedNodeId === node.id;
+  return {
+    'is-match': matched,
+    'is-focused': focused,
+    'is-dim': hasMatches.value && !matched,
+  };
+}
+
+function labelClasses(node: PositionedNode) {
+  return {
+    'is-dim': hasMatches.value && !(props.matchedNodeIds?.has(node.id) ?? false),
+    'is-focused': props.focusedNodeId === node.id,
+  };
+}
+
+function edgeClasses(edge: PositionedEdge) {
+  const highlighted = props.highlightedEdgeKeys?.has(edge.key) ?? false;
+  return {
+    'is-related': highlighted,
+    'is-dim': hasMatches.value && !highlighted,
+  };
+}
+
+function onBackgroundClick(event: MouseEvent) {
+  if (event.target === event.currentTarget) {
+    emit('blank-click');
+  }
+}
 </script>
 
 <template>
@@ -170,6 +229,7 @@ function labelText(node: PositionedNode): string {
       class="graph-svg"
       :viewBox="viewBox"
       role="img"
+      @click="onBackgroundClick"
       aria-label="Repository graph"
       preserveAspectRatio="xMidYMid meet"
     >
@@ -183,6 +243,7 @@ function labelText(node: PositionedNode): string {
         >
           <line
             class="edge"
+            :class="edgeClasses(edge)"
             :x1="edge.x1"
             :y1="edge.y1"
             :x2="edge.x2"
@@ -209,6 +270,7 @@ function labelText(node: PositionedNode): string {
         >
           <circle
             class="node"
+            :class="nodeClasses(node)"
             :cx="node.x"
             :cy="node.y"
             :r="node.r"
@@ -216,6 +278,7 @@ function labelText(node: PositionedNode): string {
           />
           <text
             class="node-label"
+            :class="labelClasses(node)"
             :x="node.x + node.r + 3"
             :y="node.y + 3"
           >{{ labelText(node) }}</text>
@@ -252,6 +315,16 @@ function labelText(node: PositionedNode): string {
   transition: stroke 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
 }
 
+.edge.is-related {
+  stroke: #2563eb;
+  stroke-opacity: 0.95;
+  stroke-width: 2.4;
+}
+
+.edge.is-dim {
+  stroke-opacity: 0.08;
+}
+
 .edge-hit {
   stroke: transparent;
   pointer-events: stroke;
@@ -270,7 +343,23 @@ function labelText(node: PositionedNode): string {
   stroke: #fff;
   stroke-width: 1.5;
   cursor: pointer;
-  transition: stroke 0.15s, stroke-width 0.15s;
+  transition: stroke 0.15s, stroke-width 0.15s, opacity 0.15s, filter 0.15s;
+}
+
+.node.is-match {
+  stroke: #f59e0b;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.35));
+}
+
+.node.is-focused {
+  stroke: #172033;
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 12px rgba(37, 99, 235, 0.38));
+}
+
+.node.is-dim {
+  opacity: 0.22;
 }
 
 .node-group:hover .node {
@@ -282,6 +371,16 @@ function labelText(node: PositionedNode): string {
   font-size: 10px;
   fill: #263247;
   pointer-events: none;
+  transition: opacity 0.15s, fill 0.15s, font-weight 0.15s;
+}
+
+.node-label.is-dim {
+  opacity: 0.28;
+}
+
+.node-label.is-focused {
+  fill: #172033;
+  font-weight: 700;
 }
 
 .placeholder-text {
