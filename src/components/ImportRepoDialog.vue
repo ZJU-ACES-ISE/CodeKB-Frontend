@@ -93,7 +93,9 @@ async function submit() {
         ref: form.ref.trim() || undefined,
         depth: form.depth,
       });
-      ElMessage.success('仓库已开始导入');
+      if (repo.action !== 'DUPLICATE') {
+        ElMessage.success(repo.action === 'UPDATED' ? '仓库已开始更新' : '仓库已开始导入');
+      }
       emit('imported', repo);
       emit('update:visible', false);
     } catch {

@@ -13,6 +13,9 @@ export const repoApi = {
   retryAnalysis(id: number) {
     return client.post<ImportRepoResponse, ImportRepoResponse>(`/analysis/repos/${id}/retry`);
   },
+  refresh(id: number) {
+    return client.post<ImportRepoResponse, ImportRepoResponse>(`/repos/${id}/refresh`);
+  },
   importZip(kbId: number, file: File, repoName?: string) {
     const fd = new FormData();
     fd.append('file', file);

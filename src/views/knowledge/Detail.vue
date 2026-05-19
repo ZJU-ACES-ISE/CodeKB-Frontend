@@ -154,6 +154,24 @@ function pollImportedRepos() {
 }
 
 async function handleImported(result: ImportRepoResponse) {
+  if (result.action === 'DUPLICATE') {
+    try {
+      await ElMessageBox.confirm(
+        `仓库「${result.repoName || `#${result.repoId}` }」已导入当前账户。是否直接更新该知识库仓库？`,
+        '仓库已存在',
+        {
+          type: 'warning',
+          confirmButtonText: '更新',
+          cancelButtonText: '取消',
+        },
+      )
+    } catch {
+      return
+    }
+    await repoApi.refresh(result.repoId)
+    ElMessage.success('已开始更新仓库，后台正在重新解析并构图...')
+  }
+  retriedRepoIds.delete(result.repoId)
   await loadRepos()
   void pollImportedRepo(result.repoId)
 }

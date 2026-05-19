@@ -88,7 +88,10 @@ export interface ImportRepoInput {
 
 export interface ImportRepoResponse {
   repoId: number;
+  kbId?: number;
+  repoName?: string;
   status: string;
+  action?: 'IMPORTED' | 'DUPLICATE' | 'UPDATED' | string;
 }
 
 export interface RepoContributor {

@@ -229,16 +229,19 @@
             </div>
           </div>
           <div class="repo-list-statuses">
-            <el-tag size="small" effect="plain" :type="repoStatusTagType(repo.status)">
-              仓库 {{ repoStatusLabel(repo.status) }}
-            </el-tag>
-            <el-tag
-              size="small"
-              effect="plain"
-              :type="graphTaskStatusTagType(repo.latestGraphTask?.status || 'NONE')"
-            >
-              图任务 {{ graphTaskStatusLabel(repo.latestGraphTask?.status || 'NONE') }}
-            </el-tag>
+            <div class="repo-list-status-tags">
+              <el-tag size="small" effect="plain" :type="repoStatusTagType(repo.status)">
+                仓库 {{ repoStatusLabel(repo.status) }}
+              </el-tag>
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="graphTaskStatusTagType(repo.latestGraphTask?.status || 'NONE')"
+              >
+                图任务 {{ graphTaskStatusLabel(repo.latestGraphTask?.status || 'NONE') }}
+              </el-tag>
+            </div>
+            <el-button size="small" plain @click="refreshRepo(repo)">更新</el-button>
           </div>
         </div>
       </div>
@@ -443,7 +446,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile, UploadInstance } from 'element-plus'
 import client from '@/api/client'
 import { knowledgeApi } from '@/api/knowledge'
@@ -554,6 +557,10 @@ watch(repoPageCount, (count) => {
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function clearRetryState(repoId: number) {
+  retriedRepoIds.delete(repoId)
 }
 
 const REPO_FINAL_STATUSES = new Set(['SUMMARIZED', 'FAILED'])
@@ -691,13 +698,75 @@ async function submitForm(
       ref: form.value.ref || undefined,
       depth: form.value.depth,
     })
-    ElMessage.success('导入任务已创建，后台正在处理...')
-    form.value.url = ''
-    form.value.ref = ''
-    onImported(result)
+    const shouldResetForm = await handleImportResult(result)
+    if (shouldResetForm) {
+      form.value.url = ''
+      form.value.ref = ''
+    }
   } catch (e: any) {
-    ElMessage.error(e?.message || '导入失败')
+    ElMessage.error(e?.message || '更新失败')
   } finally { submitting.value = false }
+}
+
+async function handleImportResult(result?: ImportRepoResponse) {
+  if (!result?.repoId) {
+    await onImported(result)
+    ElMessage.success('导入任务已创建，后台正在处理...')
+    return true
+  }
+
+  if (result.action === 'DUPLICATE') {
+    try {
+      await ElMessageBox.confirm(
+        `仓库「${result.repoName || `#${result.repoId}`}」已导入当前账户。是否直接更新该知识库仓库？`,
+        '仓库已存在',
+        {
+          type: 'warning',
+          confirmButtonText: '更新',
+          cancelButtonText: '取消',
+        },
+      )
+    } catch {
+      return false
+    }
+    await triggerRepoRefresh(result.repoId, '已开始更新仓库，后台正在重新解析并构图...')
+    return true
+  }
+
+  const successMessage = result.action === 'UPDATED'
+    ? '已开始更新仓库，后台正在重新解析并构图...'
+    : '导入任务已创建，后台正在处理...'
+  await onImported(result)
+  ElMessage.success(successMessage)
+  return true
+}
+
+async function triggerRepoRefresh(repoId: number, successMessage = '已开始更新仓库，后台正在重新解析并构图...') {
+  clearRetryState(repoId)
+  const result = await repoApi.refresh(repoId)
+  await onImported(result)
+  ElMessage.success(successMessage)
+}
+
+async function refreshRepo(repo: KbRepo) {
+  try {
+    await ElMessageBox.confirm(
+      `确定重新构建仓库「${repo.name}」吗？这会重新解析摘要并重新提交图任务。`,
+      '仓库已存在',
+      {
+        type: 'warning',
+        confirmButtonText: '更新',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    await triggerRepoRefresh(repo.id)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '更新失败')
+  }
 }
 
 const gitForm = makeForm()
@@ -893,6 +962,7 @@ async function onImported(result?: ImportRepoResponse) {
   importOpen.value = false
   await refreshRepoStatusSnapshot(true)
   if (result?.repoId) {
+    clearRetryState(result.repoId)
     void pollImportedRepo(result.repoId)
   } else {
     pollImportedRepos()
@@ -1192,8 +1262,14 @@ function fmtNum(n: number) {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
+}
+.repo-list-status-tags {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
 }
 .repo-pagination {
   display: flex;
@@ -1271,7 +1347,8 @@ function fmtNum(n: number) {
     flex-direction: column;
     align-items: flex-start;
   }
-  .repo-list-statuses {
+  .repo-list-statuses,
+  .repo-list-status-tags {
     align-items: flex-start;
   }
   .repo-sort-select {
