@@ -63,6 +63,20 @@ export interface RepoDetailResponse {
   latestGraphTask: GraphTask | null;
 }
 
+export interface GraphTaskFlowItem {
+  repo: KbRepo;
+  kbName: string;
+  summaryExists: boolean;
+  summaryCreatedAt?: string | null;
+  summaryUpdatedAt?: string | null;
+  latestGraphTask?: GraphTask | null;
+  graphTaskCount: number;
+  latestActivityAt?: string | null;
+  currentStage: string;
+  currentStageLabel: string;
+  errorMessage?: string | null;
+}
+
 export interface ImportRepoInput {
   kbId: number;
   githubUrl: string;

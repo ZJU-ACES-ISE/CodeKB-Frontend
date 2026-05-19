@@ -10,6 +10,7 @@ const auth = useAuthStore();
 const activeMenu = computed(() => {
   if (route.path.startsWith('/knowledge')) return 'knowledge';
   if (route.path.startsWith('/repos')) return 'knowledge';
+  if (route.path.startsWith('/graph-tasks')) return 'graph-tasks';
   if (route.path.startsWith('/graph')) return 'graph';
   if (route.path.startsWith('/search')) return 'search';
   if (route.path.startsWith('/company')) return 'company';
@@ -18,6 +19,7 @@ const activeMenu = computed(() => {
 
 function goto(key: string) {
   if (key === 'knowledge') router.push('/knowledge');
+  if (key === 'graph-tasks') router.push('/graph-tasks');
   if (key === 'graph') router.push('/graph');
   if (key === 'search') router.push('/search');
   if (key === 'company') router.push('/company');
@@ -39,19 +41,23 @@ function onLogout() {
       <el-menu :default-active="activeMenu" class="app-menu" @select="goto">
         <el-menu-item index="search">
           <el-icon><IconMagnet /></el-icon>
-          <span>代码挖掘</span>
+          <span>&#20195;&#30721;&#25366;&#25496;</span>
+        </el-menu-item>
+        <el-menu-item index="graph-tasks">
+          <el-icon><IconList /></el-icon>
+          <span>&#22270;&#35299;&#26512;&#20219;&#21153;</span>
         </el-menu-item>
         <el-menu-item index="knowledge">
           <el-icon><IconCollection /></el-icon>
-          <span>知识库</span>
+          <span>&#30693;&#35782;&#24211;</span>
         </el-menu-item>
         <el-menu-item index="graph">
           <el-icon><IconShare /></el-icon>
-          <span>关联图</span>
+          <span>&#20851;&#32852;&#22270;</span>
         </el-menu-item>
         <el-menu-item index="company">
           <el-icon><IconOfficeBuilding /></el-icon>
-          <span>公司资产</span>
+          <span>&#20844;&#21496;&#36164;&#20135;</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -72,7 +78,7 @@ function onLogout() {
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item disabled>{{ auth.user?.role || 'USER' }}</el-dropdown-item>
-                <el-dropdown-item divided @click="onLogout">退出登录</el-dropdown-item>
+                <el-dropdown-item divided @click="onLogout">&#36864;&#20986;&#30331;&#24405;</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -177,7 +183,7 @@ function onLogout() {
 .app-main {
   background: #f8fafc;
   padding: 0;
-  overflow-y: auto;   /* 普通页面可以滚动 */
+  overflow-y: auto;
   height: 100%;
 }
 </style>

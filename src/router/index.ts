@@ -10,7 +10,7 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'login',
         component: () => import('@/views/login/Login.vue'),
-        meta: { public: true, title: '登录' },
+        meta: { public: true, title: '\u767b\u5f55' },
       },
     ],
   },
@@ -20,42 +20,48 @@ const routes: RouteRecordRaw[] = [
     redirect: '/search',
     children: [
       {
+        path: 'graph-tasks',
+        name: 'graph-task-list',
+        component: () => import('@/views/graph-task/List.vue'),
+        meta: { title: '\u56fe\u89e3\u6790\u4efb\u52a1' },
+      },
+      {
         path: 'knowledge',
         name: 'knowledge-list',
         component: () => import('@/views/knowledge/List.vue'),
-        meta: { title: '知识库' },
+        meta: { title: '\u77e5\u8bc6\u5e93' },
       },
       {
         path: 'knowledge/:kbId',
         name: 'knowledge-detail',
         component: () => import('@/views/knowledge/Detail.vue'),
-        meta: { title: '知识库详情' },
+        meta: { title: '\u77e5\u8bc6\u5e93\u8be6\u60c5' },
         props: true,
       },
       {
         path: 'repos/:repoId',
         name: 'repo-detail',
         component: () => import('@/views/repo/Detail.vue'),
-        meta: { title: '仓库详情' },
+        meta: { title: '\u4ed3\u5e93\u8be6\u60c5' },
         props: true,
       },
       {
         path: 'graph',
         name: 'graph',
         component: () => import('@/views/graph/Index.vue'),
-        meta: { title: '关联图' },
+        meta: { title: '\u5173\u8054\u56fe' },
       },
       {
         path: 'search',
         name: 'search',
         component: () => import('@/views/search/Index.vue'),
-        meta: { title: '代码挖掘' },
+        meta: { title: '\u4ee3\u7801\u6316\u6398' },
       },
       {
         path: 'company',
         name: 'company',
         component: () => import('@/views/company/Index.vue'),
-        meta: { title: '公司资产' },
+        meta: { title: '\u516c\u53f8\u8d44\u4ea7' },
       },
     ],
   },
@@ -81,7 +87,7 @@ router.beforeEach((to) => {
     return { path: '/search' };
   }
   if (to.meta.title) {
-    document.title = `${to.meta.title as string} · CodeKB`;
+    document.title = `${to.meta.title as string} - CodeKB`;
   } else {
     document.title = 'CodeKB';
   }
