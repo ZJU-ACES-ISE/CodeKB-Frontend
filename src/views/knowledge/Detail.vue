@@ -1,5 +1,19 @@
 <template>
   <div class="page">
+    <div v-if="loadError" class="state-wrap">
+      <el-result
+        icon="warning"
+        title="无法访问该知识库"
+        :sub-title="loadError"
+      >
+        <template #extra>
+          <el-button @click="router.replace('/knowledge')">返回知识库列表</el-button>
+          <el-button type="primary" @click="initialize">重试</el-button>
+        </template>
+      </el-result>
+    </div>
+
+    <template v-else>
     <div class="page-header">
       <div>
         <el-breadcrumb separator="/">
@@ -71,6 +85,7 @@
         <el-button type="primary" :loading="kbEditSaving" @click="saveKbMeta">保存</el-button>
       </template>
     </el-dialog>
+    </template>
   </div>
 </template>
 
@@ -88,7 +103,8 @@ const props = defineProps<{ kbId: string }>()
 const router = useRouter()
 const kb = ref<KnowledgeBase | null>(null)
 const repos = ref<KbRepo[]>([])
-const loading = ref(false)
+const loading = ref(true)
+const loadError = ref('')
 const importDialogVisible = ref(false)
 const kbEditVisible = ref(false)
 const kbEditSaving = ref(false)
@@ -128,13 +144,25 @@ async function saveKbMeta() {
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
+  void initialize()
+})
+
+async function initialize() {
+  loadError.value = ''
+  loading.value = true
   try {
     kb.value = await knowledgeApi.get(Number(props.kbId))
     await loadRepos()
     pollImportedRepos()
-  } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
-})
+  } catch (e: any) {
+    kb.value = null
+    repos.value = []
+    loadError.value = e?.message || '加载失败'
+  } finally {
+    loading.value = false
+  }
+}
 
 async function loadRepos(showLoading = true) {
   if (showLoading) loading.value = true

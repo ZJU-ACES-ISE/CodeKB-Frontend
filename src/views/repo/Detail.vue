@@ -9,6 +9,21 @@
 
     <div v-if="loading" class="center-spin"><el-icon class="is-loading" :size="32"><Loading /></el-icon></div>
 
+    <template v-else-if="loadError">
+      <div class="state-wrap">
+        <el-result
+          icon="warning"
+          title="无法访问该仓库"
+          :sub-title="loadError"
+        >
+          <template #extra>
+            <el-button @click="router.replace('/knowledge')">返回知识库列表</el-button>
+            <el-button type="primary" @click="initialize">重试</el-button>
+          </template>
+        </el-result>
+      </div>
+    </template>
+
     <template v-else-if="detail">
       <div class="repo-header">
         <div>
@@ -180,6 +195,7 @@ import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStat
 const props = defineProps<{ repoId: string }>()
 const router = useRouter()
 const loading = ref(true)
+const loadError = ref('')
 const detail = ref<RepoDetailResponse | null>(null)
 const REPO_POLL_MAX_ATTEMPTS = 60
 const REPO_POLL_INTERVAL_MS = 2000
@@ -190,14 +206,21 @@ onUnmounted(() => {
   isActive = false
 })
 
-onMounted(async () => {
+onMounted(() => {
+  void initialize()
+})
+
+async function initialize() {
+  loadError.value = ''
+  detail.value = null
+  loading.value = true
   try {
     await loadDetail()
     void pollWhileImported()
   }
-  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  catch (e: any) { loadError.value = e?.message || '加载失败' }
   finally { loading.value = false }
-})
+}
 
 async function loadDetail() {
   detail.value = await repoApi.get(Number(props.repoId))
