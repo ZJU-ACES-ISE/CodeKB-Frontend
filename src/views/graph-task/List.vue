@@ -236,7 +236,7 @@ const providerOptions = [
 ]
 
 const repoStatusOptions = ['IMPORTED', 'SUMMARIZED', 'FAILED']
-const graphStatusOptions = ['NONE', 'PENDING', 'SUBMITTED', 'BUILDING', 'READY', 'FAILED']
+const graphStatusOptions = ['NONE', 'PENDING', 'BUILDING', 'READY', 'FAILED']
 
 const kbOptions = computed(() => [...new Set(flows.value.map((item) => item.kbName))].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 
@@ -397,7 +397,8 @@ function sortFlows(items: GraphTaskFlowItem[]) {
 }
 
 function graphStatusOf(item?: GraphTaskFlowItem | null) {
-  return item?.latestGraphTask?.status || 'NONE'
+  const status = item?.latestGraphTask?.status || 'NONE'
+  return status === 'SUBMITTED' || status === 'SLOW_BUILDING' ? 'BUILDING' : status
 }
 
 function repoStatusIsFinal(status?: string | null) {

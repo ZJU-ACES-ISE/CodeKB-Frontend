@@ -170,7 +170,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import client from '@/api/client'
-import { graphTaskStatusLabel, graphTaskStatusTagType, repoStatusLabel, repoStatusTagType } from '@/utils/format'
+import { graphTaskStatusLabel, graphTaskStatusTagType, normalizeGraphTaskStatus, repoStatusLabel, repoStatusTagType } from '@/utils/format'
 
 const router = useRouter()
 const loading = ref(false)
@@ -184,8 +184,13 @@ const statusEntries = computed(() =>
 )
 const graphTaskEntries = computed(() => {
   if (!stats.value) return [] as [string, number][]
-  const dist = (stats.value.graphTaskDistribution ?? {}) as Record<string, number>
-  const order = ['NONE', 'PENDING', 'SUBMITTED', 'BUILDING', 'READY', 'FAILED']
+  const raw = (stats.value.graphTaskDistribution ?? {}) as Record<string, number>
+  const dist = Object.entries(raw).reduce<Record<string, number>>((acc, [key, count]) => {
+    const normalized = normalizeGraphTaskStatus(key) || key
+    acc[normalized] = (acc[normalized] || 0) + count
+    return acc
+  }, {})
+  const order = ['NONE', 'PENDING', 'BUILDING', 'READY', 'FAILED']
   return order
     .filter((key) => dist[key] !== undefined)
     .map((key) => [key, dist[key]] as [string, number])
@@ -219,14 +224,14 @@ function statusColor(s: string) {
   return { IMPORTED: '#69758a', SUMMARIZED: '#409eff', FAILED: '#f56c6c' }[s] ?? '#ccc'
 }
 function graphTaskColor(s: string) {
+  const normalized = normalizeGraphTaskStatus(s) || s
   return {
     NONE: '#c0c4cc',
     PENDING: '#909399',
-    SUBMITTED: '#e6a23c',
     BUILDING: '#e6a23c',
     READY: '#67c23a',
     FAILED: '#f56c6c',
-  }[s] ?? '#ccc'
+  }[normalized] ?? '#ccc'
 }
 
 const LANG_COLORS: Record<string, string> = {

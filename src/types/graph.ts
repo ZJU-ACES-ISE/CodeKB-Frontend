@@ -26,6 +26,12 @@ export interface CreateGraphTaskInput {
   depth?: number;
 }
 
+export interface GraphLoadOptions {
+  compact?: boolean;
+  nodeLimit?: number;
+  edgeLimit?: number;
+}
+
 export type GraphType =
   | 'folder_structure'
   | 'cross_file_deps'
@@ -46,7 +52,7 @@ export interface GraphNode {
   file_path: string;
   start_line: number;
   end_line: number;
-  code: string;
+  code?: string | null;
   original_id?: string;
 }
 
@@ -68,9 +74,17 @@ export interface GraphMetadata {
   edge_count: number;
   graph_type_counts: Record<string, number>;
   edge_type_counts: Record<string, number>;
+  full_node_count?: number;
+  full_edge_count?: number;
+  returned_node_count?: number;
+  returned_edge_count?: number;
+  compact?: boolean;
+  truncated?: boolean;
+  node_code_omitted?: boolean;
 }
 
 export interface GraphPayload {
+  taskId?: number;
   job?: Record<string, unknown>;
   metadata: GraphMetadata;
   nodes: GraphNode[];

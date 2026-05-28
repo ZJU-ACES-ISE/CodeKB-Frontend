@@ -41,10 +41,11 @@
       </el-button>
 
       <div class="status-box" :class="{ error: task?.status === 'FAILED' }">
-        <template v-if="polling">构图中... {{ task?.externalStatusRaw || task?.status }}</template>
+        <template v-if="polling">构图中... {{ pollingStatusText }}</template>
         <template v-else-if="task">
-          状态：{{ task.status }}
+          状态：{{ taskStatusLabel }}
           <span v-if="task.nodeCount != null">（{{ task.nodeCount }} 节点 / {{ task.edgeCount }} 边）</span>
+          <div v-if="graphLoadNote" style="margin-top:4px;color:#69758a">{{ graphLoadNote }}</div>
           <div v-if="task.errorMessage" style="margin-top:4px;color:#b3261e">{{ task.errorMessage }}</div>
         </template>
         <template v-else>空闲</template>
@@ -236,7 +237,7 @@
                   <span v-else>-</span>
                 </span>
               </div>
-              <pre class="code-block">{{ selectedNode.code || '' }}</pre>
+              <pre class="code-block">{{ selectedNodeCodeText }}</pre>
             </template>
             <template v-else-if="selectedEdge">
               <div class="detail-title">{{ edgeTitle }}</div>
@@ -265,12 +266,23 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { graphApi } from '@/api/graph'
 import { knowledgeApi } from '@/api/knowledge'
 import GraphCanvas from '@/components/GraphCanvas.vue'
 import { useGraphJob } from '@/composables/useGraphJob'
-import type { GraphEdge, GraphNode, GraphPayload } from '@/types/graph'
+import type { GraphEdge, GraphLoadOptions, GraphNode, GraphPayload } from '@/types/graph'
 import type { KnowledgeBase, KbRepo } from '@/types/api'
 import client from '@/api/client'
+
+const DEFAULT_VISIBLE_TYPES = ['folder_structure', 'cross_file_deps', 'call_graph', 'class_inheritance']
+const DEFAULT_COMPACT_NODE_LIMIT = 1200
+const DEFAULT_COMPACT_EDGE_LIMIT = 6000
+const TASK_STATUS_LABELS: Record<string, string> = {
+  PENDING: '排队中',
+  BUILDING: '构建中',
+  READY: '已就绪',
+  FAILED: '失败',
+}
 
 const route = useRoute()
 const { task, graph, polling, error, build, refresh, load } = useGraphJob()
@@ -297,7 +309,37 @@ const searchPanelMinimized = ref(false)
 const detailPanelMinimized = ref(false)
 const manualDetailPanelPinned = ref(false)
 const detailSelectionPinned = ref(false)
+const loadedTaskId = ref<number | null>(null)
+const nodeDetailLoading = ref(false)
+const fetchedNodeDetailIds = ref<Set<string>>(new Set())
 const detailPanelPinned = computed(() => manualDetailPanelPinned.value || detailSelectionPinned.value)
+const taskStatusLabel = computed(() => formatTaskStatus(task.value?.status))
+const pollingStatusText = computed(() => {
+  const raw = task.value?.externalStatusRaw?.trim()
+  if (raw && raw !== task.value?.status) {
+    return `${taskStatusLabel.value || task.value?.status || '构图中'} (${raw})`
+  }
+  return taskStatusLabel.value || raw || '构图中'
+})
+const graphLoadNote = computed(() => {
+  const metadata = graph.value?.metadata
+  if (!metadata?.compact) return ''
+  const returnedNodes = metadata.returned_node_count ?? graph.value?.nodes.length ?? 0
+  const returnedEdges = metadata.returned_edge_count ?? graph.value?.edges.length ?? 0
+  const fullNodes = metadata.full_node_count ?? metadata.node_count ?? returnedNodes
+  const fullEdges = metadata.full_edge_count ?? metadata.edge_count ?? returnedEdges
+  if (metadata.truncated) {
+    return `当前显示轻量图：${returnedNodes}/${fullNodes} 节点，${returnedEdges}/${fullEdges} 边；节点源码按需加载。`
+  }
+  return '当前显示轻量图，节点源码按需加载。'
+})
+const selectedNodeCodeText = computed(() => {
+  if (!selectedNode.value) return ''
+  if (nodeDetailLoading.value) return '源码加载中...'
+  if (selectedNode.value.code != null && selectedNode.value.code !== '') return selectedNode.value.code
+  if (graph.value?.metadata?.node_code_omitted) return '该节点源码未内联，点击节点后按需加载。'
+  return ''
+})
 
 const typeCountEntries = computed(() =>
   graph.value ? Object.entries(graph.value.metadata.graph_type_counts) : []
@@ -504,12 +546,18 @@ watch(graph, () => {
   detailSelectionPinned.value = false
   searchPanelMinimized.value = false
   detailPanelMinimized.value = false
+  nodeDetailLoading.value = false
+  fetchedNodeDetailIds.value = new Set()
+  if (!graph.value) {
+    loadedTaskId.value = null
+  }
 })
 
 async function onKbChange(kbId: number) {
   selectedRepoId.value = null
   repoList.value = []
   graph.value = null
+  loadedTaskId.value = null
   selectedEdge.value = null
   selectedNode.value = null
   selectedGraphNodeId.value = null
@@ -527,19 +575,19 @@ async function onRepoChange(repoId: number | null) {
   selectedGraphEdgeKey.value = null
   detailSelectionPinned.value = false
   graph.value = null
+  loadedTaskId.value = null
   task.value = null
   try {
     const [data, latestTask] = await Promise.allSettled([
-      client.get<GraphPayload, GraphPayload>(`/graph/repos/${repoId}/latest`),
+      graphApi.getLatestGraph(repoId, currentGraphLoadOptions()),
       client.get<any, any>(`/graph/repos/${repoId}/latest-task`),
     ])
     if (latestTask.status === 'fulfilled' && latestTask.value) {
       task.value = latestTask.value
     }
     if (data.status === 'fulfilled' && data.value) {
-      graph.value = data.value
-      applyDefaultVisibleTypes(data.value)
-      ElMessage.success(`已加载关联图：${data.value.metadata.node_count} 节点 / ${data.value.metadata.edge_count} 边`)
+      applyGraphPayload(data.value)
+      ElMessage.success(buildGraphLoadedMessage(data.value))
     }
   } catch {
     // 没有已就绪图就静默，等用户 Build
@@ -554,8 +602,9 @@ async function handleBuild() {
     return
   }
   if (task.value?.status === 'READY') {
-    await load(task.value.id)
+    await load(task.value.id, currentGraphLoadOptions())
     if (graph.value) {
+      loadedTaskId.value = graph.value.taskId ?? task.value.id
       applyDefaultVisibleTypes(graph.value)
       ElMessage.success('构建完成并已加载图')
     }
@@ -569,16 +618,110 @@ async function handleRefresh() {
 
 async function handleLoad() {
   if (!task.value) return
-  await load(task.value.id)
+  await load(task.value.id, currentGraphLoadOptions())
   if (error.value) ElMessage.error(error.value)
-  else if (graph.value) applyDefaultVisibleTypes(graph.value)
+  else if (graph.value) {
+    loadedTaskId.value = graph.value.taskId ?? task.value.id
+    applyDefaultVisibleTypes(graph.value)
+  }
 }
 
 function applyDefaultVisibleTypes(g: GraphPayload) {
   const types = Object.keys(g.metadata.graph_type_counts)
-  const defaults = new Set(['folder_structure', 'cross_file_deps', 'call_graph', 'class_inheritance'])
+  const defaults = new Set(DEFAULT_VISIBLE_TYPES)
   const defaulted = types.filter(t => defaults.has(t))
   visibleTypes.value = new Set(defaulted.length ? defaulted : types.slice(0, 4))
+}
+
+function currentGraphLoadOptions(): GraphLoadOptions {
+  const nodeLimit = Math.min(4000, Math.max(DEFAULT_COMPACT_NODE_LIMIT, maxNodes.value * 2))
+  const edgeLimit = Math.min(20000, Math.max(DEFAULT_COMPACT_EDGE_LIMIT, nodeLimit * 5))
+  return {
+    compact: true,
+    nodeLimit,
+    edgeLimit,
+  }
+}
+
+function applyGraphPayload(payload: GraphPayload) {
+  graph.value = payload
+  loadedTaskId.value = payload.taskId ?? task.value?.id ?? null
+  applyDefaultVisibleTypes(payload)
+}
+
+function buildGraphLoadedMessage(payload: GraphPayload) {
+  const metadata = payload.metadata
+  const returnedNodes = metadata.returned_node_count ?? payload.nodes.length ?? metadata.node_count
+  const returnedEdges = metadata.returned_edge_count ?? payload.edges.length ?? metadata.edge_count
+  const fullNodes = metadata.full_node_count ?? metadata.node_count ?? returnedNodes
+  const fullEdges = metadata.full_edge_count ?? metadata.edge_count ?? returnedEdges
+  if (metadata.compact && metadata.truncated) {
+    return `已加载轻量关联图：${returnedNodes}/${fullNodes} 节点，${returnedEdges}/${fullEdges} 边`
+  }
+  return `已加载关联图：${returnedNodes} 节点 / ${returnedEdges} 边`
+}
+
+function formatTaskStatus(status?: string | null) {
+  if (!status) return '-'
+  const normalized = status === 'SUBMITTED' || status === 'SLOW_BUILDING' ? 'BUILDING' : status
+  return TASK_STATUS_LABELS[normalized] || normalized
+}
+
+function showNodeDetail(node: GraphNode) {
+  selectedEdge.value = null
+  selectedNode.value = node
+  if (detailPanelMinimized.value) {
+    detailPanelMinimized.value = false
+  }
+  void ensureNodeDetail(node)
+}
+
+async function ensureNodeDetail(node: GraphNode | null) {
+  if (!node || !graph.value?.metadata?.node_code_omitted) return
+  if (node.code != null || fetchedNodeDetailIds.value.has(node.id)) return
+  const taskId = loadedTaskId.value
+  if (!taskId) return
+  nodeDetailLoading.value = true
+  try {
+    const detail = await graphApi.getNodeDetail(taskId, node.id)
+    markNodeDetailFetched(node.id)
+    mergeNodeDetail(detail)
+  } catch (e: any) {
+    ElMessage.warning(e?.message || '加载节点详情失败')
+  } finally {
+    nodeDetailLoading.value = false
+  }
+}
+
+function markNodeDetailFetched(nodeId: string) {
+  const next = new Set(fetchedNodeDetailIds.value)
+  next.add(nodeId)
+  fetchedNodeDetailIds.value = next
+}
+
+function mergeNodeDetail(detail: GraphNode) {
+  if (!graph.value) {
+    if (selectedNode.value?.id === detail.id) {
+      selectedNode.value = { ...selectedNode.value, ...detail }
+    }
+    return
+  }
+
+  const nextNodes = graph.value.nodes.slice()
+  const index = nextNodes.findIndex((node) => node.id === detail.id)
+  if (index >= 0) {
+    const merged = { ...nextNodes[index], ...detail }
+    nextNodes[index] = merged
+    graph.value = { ...graph.value, nodes: nextNodes }
+    if (selectedNode.value?.id === detail.id) {
+      selectedNode.value = merged
+    }
+    return
+  }
+
+  if (selectedNode.value?.id === detail.id) {
+    selectedNode.value = { ...selectedNode.value, ...detail }
+  }
 }
 
 function handleFit() {
@@ -626,20 +769,12 @@ function focusMatchedNode(node: GraphNode) {
   focusedSearchNodeId.value = node.id
   pinnedSearchNodeId.value = node.id
   if (detailPanelPinned.value) return
-  selectedEdge.value = null
-  selectedNode.value = node
-  if (detailPanelMinimized.value) {
-    detailPanelMinimized.value = false
-  }
+  showNodeDetail(node)
 }
 
 function onSelectNode(node: GraphNode) {
   if (detailPanelPinned.value) return
-  selectedEdge.value = null
-  selectedNode.value = node
-  if (detailPanelMinimized.value) {
-    detailPanelMinimized.value = false
-  }
+  showNodeDetail(node)
 }
 
 function onSelectEdge(edge: GraphEdge) {
@@ -657,11 +792,7 @@ function onToggleNodeSelection(node: GraphNode) {
   selectedGraphNodeId.value = selecting ? node.id : null
   detailSelectionPinned.value = selecting
   if (selecting) {
-    selectedNode.value = node
-    selectedEdge.value = null
-    if (detailPanelMinimized.value) {
-      detailPanelMinimized.value = false
-    }
+    showNodeDetail(node)
   }
 }
 

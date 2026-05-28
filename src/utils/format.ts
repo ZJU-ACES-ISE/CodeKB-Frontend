@@ -18,15 +18,26 @@ const STATUS_LABELS: Record<string, string> = {
   SUMMARIZED: '已解析',
   FAILED: '失败',
   PENDING: '排队中',
-  SUBMITTED: '已提交',
   BUILDING: '构建中',
   READY: '就绪',
   NONE: '未创建',
 };
 
+export function normalizeGraphTaskStatus(value?: string | null): string | null | undefined {
+  if (value === 'SUBMITTED' || value === 'SLOW_BUILDING') {
+    return 'BUILDING';
+  }
+  return value;
+}
+
+function normalizeDisplayStatus(value?: string | null): string | null | undefined {
+  return normalizeGraphTaskStatus(value);
+}
+
 export function formatStatus(value?: string | null): string {
-  if (!value) return '-';
-  return STATUS_LABELS[value] ?? value;
+  const normalized = normalizeDisplayStatus(value);
+  if (!normalized) return '-';
+  return STATUS_LABELS[normalized] ?? normalized;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -34,15 +45,15 @@ const STATUS_COLOR: Record<string, string> = {
   SUMMARIZED: 'warning',
   FAILED: 'danger',
   PENDING: 'info',
-  SUBMITTED: 'info',
   BUILDING: 'warning',
   READY: 'success',
   NONE: 'info',
 };
 
 export function statusTagType(value?: string | null): 'success' | 'warning' | 'info' | 'danger' | 'primary' {
-  if (!value) return 'info';
-  return (STATUS_COLOR[value] as 'success' | 'warning' | 'info' | 'danger' | 'primary') ?? 'info';
+  const normalized = normalizeDisplayStatus(value);
+  if (!normalized) return 'info';
+  return (STATUS_COLOR[normalized] as 'success' | 'warning' | 'info' | 'danger' | 'primary') ?? 'info';
 }
 
 export function repoStatusLabel(value?: string | null): string {

@@ -1,5 +1,13 @@
-import client from './client';
-import type { ImportRepoInput, ImportRepoResponse, RepoDetailResponse } from '@/types/api';
+﻿import client from './client';
+import type {
+  BatchDeleteInput,
+  BatchDeleteResponse,
+  BatchImportInput,
+  BatchImportResponse,
+  ImportRepoInput,
+  ImportRepoResponse,
+  RepoDetailResponse,
+} from '@/types/api';
 
 const ZIP_UPLOAD_TIMEOUT_MS = 600_000;
 
@@ -9,6 +17,12 @@ export const repoApi = {
   },
   importRepo(payload: ImportRepoInput) {
     return client.post<ImportRepoResponse, ImportRepoResponse>('/repos/import', payload);
+  },
+  batchImport(payload: BatchImportInput) {
+    return client.post<BatchImportResponse, BatchImportResponse>('/repos/batch-import', payload);
+  },
+  batchDelete(payload: BatchDeleteInput) {
+    return client.post<BatchDeleteResponse, BatchDeleteResponse>('/repos/batch-delete', payload);
   },
   retryAnalysis(id: number) {
     return client.post<ImportRepoResponse, ImportRepoResponse>(`/analysis/repos/${id}/retry`);

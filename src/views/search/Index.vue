@@ -567,7 +567,8 @@ const REPO_FINAL_STATUSES = new Set(['SUMMARIZED', 'FAILED'])
 const GRAPH_FINAL_STATUSES = new Set(['READY', 'FAILED'])
 
 function graphStatusOf(repo?: Pick<KbRepo, 'latestGraphTask'> | null) {
-  return repo?.latestGraphTask?.status || 'NONE'
+  const status = repo?.latestGraphTask?.status || 'NONE'
+  return status === 'SUBMITTED' || status === 'SLOW_BUILDING' ? 'BUILDING' : status
 }
 
 function repoStatusIsFinal(status?: string | null) {

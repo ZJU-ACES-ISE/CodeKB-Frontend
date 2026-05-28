@@ -1,4 +1,4 @@
-import type { GraphTask } from './graph';
+﻿import type { GraphTask } from './graph';
 
 export interface ApiResponse<T> {
   code: number;
@@ -86,12 +86,59 @@ export interface ImportRepoInput {
   depth?: number;
 }
 
+export interface BatchImportItemInput {
+  githubUrl: string;
+  provider?: string;
+  repoName?: string;
+  ref?: string;
+  depth?: number;
+}
+
+export interface BatchImportInput {
+  kbId: number;
+  items: BatchImportItemInput[];
+}
+
 export interface ImportRepoResponse {
   repoId: number;
   kbId?: number;
   repoName?: string;
   status: string;
   action?: 'IMPORTED' | 'DUPLICATE' | 'UPDATED' | string;
+}
+
+export interface BatchImportItemResult {
+  githubUrl?: string | null;
+  repoId?: number | null;
+  repoName?: string | null;
+  status: string;
+  action: string;
+  errorMessage?: string | null;
+}
+
+export interface BatchImportResponse {
+  kbId: number;
+  total: number;
+  successCount: number;
+  failureCount: number;
+  results: BatchImportItemResult[];
+}
+
+export interface BatchDeleteInput {
+  repoIds: number[];
+}
+
+export interface BatchDeleteItemResult {
+  repoId: number;
+  success: boolean;
+  message?: string | null;
+}
+
+export interface BatchDeleteResponse {
+  total: number;
+  successCount: number;
+  failureCount: number;
+  results: BatchDeleteItemResult[];
 }
 
 export interface RepoContributor {
@@ -128,4 +175,3 @@ export interface RepoSummary {
   createdAt?: string;
   updatedAt?: string;
 }
-

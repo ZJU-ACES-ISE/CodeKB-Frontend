@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { graphApi } from '@/api/graph'
-import type { GraphPayload, GraphTask } from '@/types/graph'
+import type { GraphLoadOptions, GraphPayload, GraphTask } from '@/types/graph'
 
 export function useGraphJob() {
   const task = ref<GraphTask | null>(null)
@@ -41,10 +41,10 @@ export function useGraphJob() {
     }
   }
 
-  async function load(taskId: number) {
+  async function load(taskId: number, options?: GraphLoadOptions) {
     error.value = ''
     try {
-      graph.value = await graphApi.getGraph(taskId)
+      graph.value = await graphApi.getGraph(taskId, options)
     } catch (e: any) {
       error.value = e?.message || '加载图数据失败'
     }
