@@ -157,25 +157,39 @@
           </div>
           <div v-if="!searchPanelMinimized" class="panel-window-body">
             <div v-if="!hasActiveSearch" class="search-results-empty">&#35831;&#36755;&#20837;&#20851;&#38190;&#35789;&#65292;&#25110;&#20808;&#36873;&#25321;&#33410;&#28857;&#31867;&#22411;&#21518;&#20877;&#25628;&#32034;&#12290;</div>
-            <div v-else-if="!matchedNodes.length" class="search-results-empty">&#26410;&#62789;&#21040;&#53305;&#9147;&#30340;&#33410;&#28857;&#12290;</div>
-            <div v-else class="search-results-list">
-              <button
-                v-for="node in limitedMatchedNodes"
-                :key="node.id"
-                type="button"
-                class="search-result-item"
-                :class="{ active: activeHighlightedNodeId === node.id }"
-                @mouseenter="hoverMatchedNode(node.id)"
-                @mouseleave="clearHoveredMatchedNode()"
-                @click="focusMatchedNode(node)"
-              >
-                <div class="search-result-name">{{ node.label || node.id }}</div>
-                <div class="search-result-meta">
-                  <span>{{ node.node_type || '-' }}</span>
-                  <span>{{ node.graph_type }}</span>
-                </div>
-                <div class="search-result-path">{{ node.file_path || '-' }}</div>
-              </button>
+            <div v-else-if="!matchedNodes.length" class="search-results-empty">&#26410;&#25628;&#32034;&#21040;&#21305;&#37197;&#30340;&#33410;&#28857;&#12290;</div>
+            <div v-else class="search-results-content">
+              <div class="search-results-list">
+                <button
+                  v-for="node in pagedMatchedNodes"
+                  :key="node.id"
+                  type="button"
+                  class="search-result-item"
+                  :class="{ active: activeHighlightedNodeId === node.id }"
+                  @mouseenter="hoverMatchedNode(node.id)"
+                  @mouseleave="clearHoveredMatchedNode()"
+                  @click="focusMatchedNode(node)"
+                >
+                  <div class="search-result-name">{{ node.label || node.id }}</div>
+                  <div class="search-result-meta">
+                    <span>{{ node.node_type || '-' }}</span>
+                    <span>{{ node.graph_type }}</span>
+                  </div>
+                  <div class="search-result-path">{{ node.file_path || '-' }}</div>
+                </button>
+              </div>
+              <div v-if="matchedNodes.length > SEARCH_RESULT_PAGE_SIZE" class="search-results-pagination">
+                <span class="search-results-summary">&#31532; {{ searchPage }} / {{ searchPageCount }} &#39029;</span>
+                <el-pagination
+                  small
+                  background
+                  layout="prev, pager, next"
+                  :current-page="searchPage"
+                  :page-size="SEARCH_RESULT_PAGE_SIZE"
+                  :total="matchedNodes.length"
+                  @current-change="handleSearchPageChange"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -275,8 +289,10 @@ import type { KnowledgeBase, KbRepo } from '@/types/api'
 import client from '@/api/client'
 
 const DEFAULT_VISIBLE_TYPES = ['folder_structure', 'cross_file_deps', 'call_graph', 'class_inheritance']
+const DEFAULT_HIDDEN_GRAPH_TYPES = new Set(['function'])
 const DEFAULT_COMPACT_NODE_LIMIT = 1200
 const DEFAULT_COMPACT_EDGE_LIMIT = 6000
+const SEARCH_RESULT_PAGE_SIZE = 6
 const TASK_STATUS_LABELS: Record<string, string> = {
   PENDING: '排队中',
   BUILDING: '构建中',
@@ -294,12 +310,13 @@ const selectedRepoId = ref<number | null>(null)
 const refVal = ref('')
 const depth = ref(1)
 const maxNodes = ref(700)
-const visibleTypes = ref<Set<string>>(new Set(['folder_structure', 'cross_file_deps', 'call_graph', 'class_inheritance']))
+const visibleTypes = ref<Set<string>>(new Set(DEFAULT_VISIBLE_TYPES.filter((type) => !DEFAULT_HIDDEN_GRAPH_TYPES.has(type))))
 const selectedNode = ref<GraphNode | null>(null)
 const selectedEdge = ref<GraphEdge | null>(null)
 const renderInfo = ref('')
 const searchQuery = ref('')
 const searchNodeTypes = ref<string[]>([])
+const searchPage = ref(1)
 const focusedSearchNodeId = ref<string | null>(null)
 const hoveredSearchNodeId = ref<string | null>(null)
 const pinnedSearchNodeId = ref<string | null>(null)
@@ -397,7 +414,11 @@ const matchedNodes = computed(() => {
   })
 })
 
-const limitedMatchedNodes = computed(() => matchedNodes.value.slice(0, 40))
+const searchPageCount = computed(() => Math.max(1, Math.ceil(matchedNodes.value.length / SEARCH_RESULT_PAGE_SIZE)))
+const pagedMatchedNodes = computed(() => {
+  const start = (searchPage.value - 1) * SEARCH_RESULT_PAGE_SIZE
+  return matchedNodes.value.slice(start, start + SEARCH_RESULT_PAGE_SIZE)
+})
 const matchedNodeIds = computed(() => new Set(matchedNodes.value.map((node) => node.id)))
 
 function edgeKey(edge: GraphEdge) {
@@ -517,6 +538,7 @@ onMounted(async () => {
 })
 
 watch([normalizedSearchQuery, searchNodeTypes], () => {
+  searchPage.value = 1
   if (!hasActiveSearch.value) {
     focusedSearchNodeId.value = null
     hoveredSearchNodeId.value = null
@@ -535,9 +557,16 @@ watch([normalizedSearchQuery, searchNodeTypes], () => {
   focusedSearchNodeId.value = matchedNodes.value[0]?.id || null
 })
 
+watch(() => matchedNodes.value.length, () => {
+  if (searchPage.value > searchPageCount.value) {
+    searchPage.value = searchPageCount.value
+  }
+})
+
 watch(graph, () => {
   searchQuery.value = ''
   searchNodeTypes.value = []
+  searchPage.value = 1
   focusedSearchNodeId.value = null
   hoveredSearchNodeId.value = null
   pinnedSearchNodeId.value = null
@@ -628,9 +657,11 @@ async function handleLoad() {
 
 function applyDefaultVisibleTypes(g: GraphPayload) {
   const types = Object.keys(g.metadata.graph_type_counts)
-  const defaults = new Set(DEFAULT_VISIBLE_TYPES)
-  const defaulted = types.filter(t => defaults.has(t))
-  visibleTypes.value = new Set(defaulted.length ? defaulted : types.slice(0, 4))
+  const defaults = new Set(DEFAULT_VISIBLE_TYPES.filter((type) => !DEFAULT_HIDDEN_GRAPH_TYPES.has(type)))
+  const preferredTypes = types.filter((type) => !DEFAULT_HIDDEN_GRAPH_TYPES.has(type))
+  const defaulted = preferredTypes.filter((type) => defaults.has(type))
+  const fallbackTypes = preferredTypes.length ? preferredTypes : types
+  visibleTypes.value = new Set(defaulted.length ? defaulted : fallbackTypes.slice(0, 4))
 }
 
 function currentGraphLoadOptions(): GraphLoadOptions {
@@ -752,9 +783,16 @@ function toggleDetailPanelPinned() {
 function clearSearch() {
   searchQuery.value = ''
   searchNodeTypes.value = []
+  searchPage.value = 1
   focusedSearchNodeId.value = null
   hoveredSearchNodeId.value = null
   pinnedSearchNodeId.value = null
+}
+
+function handleSearchPageChange(page: number) {
+  searchPage.value = page
+  hoveredSearchNodeId.value = null
+  focusedSearchNodeId.value = pagedMatchedNodes.value[0]?.id || null
 }
 
 function hoverMatchedNode(nodeId: string) {
@@ -1139,6 +1177,11 @@ function firstNonBlank(...values: Array<string | null | undefined>) {
   min-height: 0;
 }
 
+.search-results-panel .panel-window-body {
+  display: flex;
+  flex-direction: column;
+}
+
 .search-results-panel {
   left: 16px;
   top: 16px;
@@ -1161,8 +1204,36 @@ function firstNonBlank(...values: Array<string | null | undefined>) {
   line-height: 1.6;
 }
 
+.search-results-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .search-results-list {
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.search-results-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #edf2f7;
+  background: rgba(248, 250, 252, 0.96);
+  flex-wrap: wrap;
+}
+
+.search-results-summary {
+  font-size: 12px;
+  color: #69758a;
+}
+
+.search-results-pagination :deep(.el-pagination) {
+  margin-left: auto;
 }
 
 .search-result-item {
